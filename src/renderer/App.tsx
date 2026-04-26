@@ -132,7 +132,7 @@ function App() {
     }
   }, [])
 
-  const stopReplay = useCallback(() => {
+  const stopReplay = useCallback((clearPoints: boolean = true) => {
     if (replayIntervalRef.current) {
       clearTimeout(replayIntervalRef.current)
       replayIntervalRef.current = null
@@ -140,7 +140,9 @@ function App() {
     replayPointsRef.current = []
     replayIndexRef.current = 0
     setStatus('idle')
-    setPoints([])
+    if (clearPoints) {
+      setPoints([])
+    }
   }, [])
 
   const getPointsInTimeRange = useCallback((session: Session, startMs: number, endMs: number): Point[] => {
@@ -160,7 +162,7 @@ function App() {
     
     if (pointsInRange.length === 0) return
 
-    stopReplay()
+    stopReplay(true)
     setStatus('replaying')
     setSelectedSession(session)
     replayPointsRef.current = pointsInRange
@@ -170,7 +172,7 @@ function App() {
 
     const replayNext = () => {
       if (replayIndexRef.current >= replayPointsRef.current.length) {
-        stopReplay()
+        stopReplay(false)
         return
       }
 
@@ -184,7 +186,7 @@ function App() {
         const delay = (nextPoint.timestamp - currentPoint.timestamp) / playbackSpeedRef.current
         replayIntervalRef.current = setTimeout(replayNext, Math.max(delay, 1))
       } else {
-        stopReplay()
+        stopReplay(false)
       }
     }
 
