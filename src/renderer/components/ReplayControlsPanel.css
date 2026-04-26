@@ -159,3 +159,107 @@
   color: white;
   box-shadow: 0 4px 15px rgba(108, 92, 231, 0.4);
 }
+
+.replay-header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.export-menu-container {
+  position: relative;
+}
+
+.export-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: rgba(108, 92, 231, 0.2);
+  color: rgba(162, 155, 254, 0.9);
+  border: 1px solid rgba(108, 92, 231, 0.3);
+}
+
+.export-btn:hover:not(.disabled) {
+  background: rgba(108, 92, 231, 0.3);
+  color: rgba(255, 255, 255, 0.95);
+  border-color: rgba(108, 92, 231, 0.5);
+}
+
+.export-btn.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.export-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: rgba(5, 10, 24, 0.98);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 8px;
+  min-width: 160px;
+  z-index: 100;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.export-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.8);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.export-menu-item:hover:not(.disabled) {
+  background: rgba(108, 92, 231, 0.2);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.export-menu-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.export-menu-item.has-submenu {
+  display: flex;
+  justify-content: space-between;
+}
+
+.export-menu-item .submenu-arrow {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-left: 8px;
+}
+
+.export-submenu {
+  position: absolute;
+  top: -8px;
+  right: 100%;
+  margin-right: 8px;
+  background: rgba(5, 10, 24, 0.98);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 8px;
+  min-width: 140px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.menu-icon {
+  font-size: 14px;
+  line-height: 1;
+}
