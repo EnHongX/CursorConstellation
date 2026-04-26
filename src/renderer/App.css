@@ -4,7 +4,7 @@
   height: 100%;
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
   background-attachment: fixed;
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 .app::-webkit-scrollbar {
@@ -55,8 +55,6 @@
   flex-direction: column;
   padding: 20px;
   gap: 20px;
-  min-height: 0;
-  overflow-y: auto;
 }
 
 .main-content {
