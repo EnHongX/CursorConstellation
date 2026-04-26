@@ -4,6 +4,8 @@
   "description": "Cursor Constellation - 一个用于记录和展示鼠标轨迹的 macOS 桌面应用",
   "main": "dist/main/main.js",
   "scripts": {
+    "postinstall": "npx electron-rebuild",
+    "rebuild": "npx electron-rebuild",
     "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
     "dev:vite": "vite",
     "dev:electron": "wait-on http://localhost:5173 && NODE_ENV=development electron .",
@@ -11,6 +13,7 @@
     "build:main": "tsc -p src/main/tsconfig.json",
     "build:renderer": "vite build",
     "start": "npm run build && electron .",
+    "start:prod": "electron .",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder"
   },
@@ -33,11 +36,14 @@
   },
   "homepage": "https://github.com/EnHongX/CursorConstellation#readme",
   "dependencies": {
+    "better-sqlite3": "^12.9.0",
     "electron": "^41.3.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.7.3",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -54,6 +60,7 @@
     "directories": {
       "output": "release"
     },
+    "npmRebuild": true,
     "files": [
       "dist/**/*",
       "package.json"
