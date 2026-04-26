@@ -23,3 +23,21 @@ export interface PermissionStatus {
   hasPermission: boolean;
   message: string;
 }
+
+export interface DbErrorResponse {
+  success: false;
+  error: string;
+}
+
+export interface DbSuccessResponse<T> {
+  success: true;
+  data: T;
+}
+
+export type DbResponse<T> = DbSuccessResponse<T> | DbErrorResponse;
+
+export interface AppError {
+  context: string;
+  message: string;
+  timestamp: number;
+}

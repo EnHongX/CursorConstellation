@@ -1,6 +1,24 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { Point, Session, SessionInfo, PermissionStatus } from './types'
 
+export interface DbErrorResponse {
+  success: false
+  error: string
+}
+
+export interface DbSuccessResponse<T> {
+  success: true
+  data: T
+}
+
+export type DbResponse<T> = DbSuccessResponse<T> | DbErrorResponse
+
+export interface AppError {
+  context: string
+  message: string
+  timestamp: number
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   checkPermission: (): Promise<PermissionStatus> => {
     return ipcRenderer.invoke('permission:check')
@@ -62,15 +80,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeAllListeners('permission:status')
   },
 
-  getSessions: (): Promise<SessionInfo[]> => {
+  onAppError: (callback: (error: AppError) => void) => {
+    ipcRenderer.on('app:error', (_event, error: AppError) => {
+      callback(error)
+    })
+    return () => ipcRenderer.removeAllListeners('app:error')
+  },
+
+  getSessions: (): Promise<DbResponse<SessionInfo[]>> => {
     return ipcRenderer.invoke('db:getSessions')
   },
 
-  getSession: (id: string): Promise<Session | null> => {
+  getSession: (id: string): Promise<DbResponse<Session | null>> => {
     return ipcRenderer.invoke('db:getSession', id)
   },
 
-  deleteSession: (id: string): Promise<boolean> => {
+  deleteSession: (id: string): Promise<DbResponse<boolean>> => {
     return ipcRenderer.invoke('db:deleteSession', id)
   },
 })
@@ -90,9 +115,10 @@ declare global {
       onRecordingResumed: (callback: () => void) => () => void
       onRecordingStopped: (callback: (session: Session) => void) => () => void
       onPermissionStatus: (callback: (status: PermissionStatus) => void) => () => void
-      getSessions: () => Promise<SessionInfo[]>
-      getSession: (id: string) => Promise<Session | null>
-      deleteSession: (id: string) => Promise<boolean>
+      onAppError: (callback: (error: AppError) => void) => () => void
+      getSessions: () => Promise<DbResponse<SessionInfo[]>>
+      getSession: (id: string) => Promise<DbResponse<Session | null>>
+      deleteSession: (id: string) => Promise<DbResponse<boolean>>
     }
   }
 }

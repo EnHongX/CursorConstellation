@@ -18,6 +18,7 @@
 - **TypeScript**：类型安全的 JavaScript
 - **Vite**：快速的前端构建工具
 - **better-sqlite3**：高性能 SQLite 数据库
+- **@electron/rebuild**：原生模块重建工具
 - **Canvas API**：用于绘制轨迹
 
 ## 项目结构
@@ -28,6 +29,7 @@ CursorConstellation/
 │   ├── main/                    # Electron 主进程
 │   │   ├── main.ts             # 主进程入口（鼠标采集、权限检查、数据库操作）
 │   │   ├── preload.ts          # 预加载脚本（IPC 通信桥接）
+│   │   ├── types.ts            # 主进程类型定义
 │   │   └── tsconfig.json       # 主进程 TypeScript 配置
 │   └── renderer/                # React 渲染进程
 │       ├── types/               # TypeScript 类型定义
@@ -43,6 +45,79 @@ CursorConstellation/
 ├── tsconfig.node.json          # Vite 配置 TypeScript
 └── vite.config.ts              # Vite 配置
 ```
+
+## 安装与启动
+
+### 环境要求
+
+- Node.js >= 18
+- npm 或 yarn
+- macOS（用于鼠标轨迹采集功能，Windows/Linux 不支持全局鼠标权限）
+
+### 安装步骤
+
+```bash
+# 克隆项目
+git clone <repository-url>
+cd CursorConstellation
+
+# 安装依赖（会自动执行 electron-rebuild 重建原生模块）
+npm install
+```
+
+### 重要：原生模块重建
+
+本项目使用了 `better-sqlite3`，这是一个**原生 Node.js 模块**（用 C++ 编写）。由于 Electron 使用的是修改过的 V8 引擎，其 `NODE_MODULE_VERSION` 与系统安装的 Node.js 不同，因此**必须**对原生模块进行重建。
+
+#### 自动重建
+
+`npm install` 完成后会自动执行 `postinstall` 脚本进行重建。
+
+#### 手动重建
+
+如果遇到模块版本不兼容的错误，手动执行：
+
+```bash
+npm run rebuild
+```
+
+### 启动
+
+#### 开发模式
+
+开发模式下，Vite 会提供热更新功能，Electron 会自动连接到开发服务器。
+
+```bash
+npm run dev
+```
+
+#### 生产模式
+
+先编译 TypeScript 代码，然后启动应用。
+
+```bash
+npm run start
+```
+
+#### 仅启动（不重新编译）
+
+```bash
+npm run start:prod
+```
+
+## 可用脚本
+
+| 脚本 | 说明 |
+|------|------|
+| `npm run dev` | 启动开发模式（Vite + Electron） |
+| `npm run build` | 编译所有 TypeScript 代码 |
+| `npm run build:main` | 仅编译主进程代码 |
+| `npm run build:renderer` | 仅编译渲染进程代码 |
+| `npm run start` | 编译并启动应用 |
+| `npm run start:prod` | 直接启动应用（不重新编译） |
+| `npm run rebuild` | 重建 Electron 原生模块 |
+| `npm run pack` | 打包应用（不生成安装包） |
+| `npm run dist` | 构建并生成安装包 |
 
 ## macOS 权限说明
 
@@ -85,47 +160,6 @@ CursorConstellation/
 - **Electron** 或 **Node.js**（取决于你的开发环境）
 - 或者直接给你运行命令的 **终端应用**（Terminal/iTerm2）开启权限
 
-## 安装
-
-确保你已经安装了 Node.js（推荐 v18 或更高版本）和 npm。
-
-```bash
-# 克隆项目
-git clone <repository-url>
-cd CursorConstellation
-
-# 安装依赖
-npm install
-```
-
-## 启动
-
-### 开发模式
-
-开发模式下，Vite 会提供热更新功能，Electron 会自动连接到开发服务器。
-
-```bash
-npm run dev
-```
-
-### 生产模式
-
-先编译 TypeScript 代码，然后启动应用。
-
-```bash
-npm run start
-```
-
-## 可用脚本
-
-- `npm run dev`：启动开发模式（Vite + Electron）
-- `npm run build`：编译所有 TypeScript 代码
-- `npm run build:main`：仅编译主进程代码
-- `npm run build:renderer`：仅编译渲染进程代码
-- `npm run start`：编译并启动应用
-- `npm run pack`：打包应用（不生成安装包）
-- `npm run dist`：构建并生成安装包
-
 ## 使用说明
 
 ### 记录鼠标轨迹
@@ -157,6 +191,56 @@ npm run start
 - `sessions`：存储 session 元信息（开始时间、结束时间、点数等）
 - `points`：存储每个轨迹点的 x、y、timestamp、speed
 
+## 故障排除
+
+### 常见问题
+
+#### 1. 启动时提示 "better-sqlite3 was compiled against a different Node.js version"
+
+**原因**：原生模块 `better-sqlite3` 是用系统 Node.js 编译的，与 Electron 使用的 V8 引擎版本不匹配。
+
+**解决方法**：
+
+```bash
+npm run rebuild
+```
+
+或者删除 node_modules 后重新安装：
+
+```bash
+rm -rf node_modules
+npm install
+```
+
+#### 2. 数据库不可用，历史记录功能无法使用
+
+**原因**：数据库初始化失败，可能是 better-sqlite3 模块未正确加载。
+
+**解决方法**：
+- 检查控制台错误信息
+- 执行 `npm run rebuild` 重建原生模块
+- 确保 `better-sqlite3` 已正确安装
+
+#### 3. 鼠标轨迹无法采集
+
+**原因**：可能是可访问性权限未开启。
+
+**解决方法**：
+- 查看应用是否显示权限警告提示
+- 按照 "macOS 权限说明" 章节开启权限
+- 开发模式下确保给终端或 Electron 应用开启了权限
+
+#### 4. 执行 electron-rebuild 时遇到编译错误
+
+**原因**：可能缺少系统编译工具。
+
+**解决方法**（macOS）：
+
+```bash
+# 安装 Xcode 命令行工具
+xcode-select --install
+```
+
 ## 界面预览
 
 应用采用深色主题设计，包含：
@@ -164,6 +248,7 @@ npm run start
 - 左侧：轨迹画布、控制按钮、当前 session 统计
 - 右侧：历史记录列表
 - 权限警告提示（如果权限不足）
+- 错误提示横幅（如果发生错误）
 - 平滑的动画效果
 - 响应式布局
 
@@ -178,6 +263,15 @@ npm run dist
 打包完成后，安装包会生成在 `release/` 目录下。
 
 注意：打包需要图标文件（`assets/icon.icns`），如果没有图标文件，可能需要注释掉 `package.json` 中的 `icon` 配置。
+
+## 错误处理
+
+应用包含完善的错误处理机制：
+
+1. **数据库错误**：如果数据库初始化失败，会显示警告横幅，历史记录功能不可用，但记录功能仍可使用
+2. **权限错误**：自动检测权限状态，显示友好的提示框
+3. **原生模块错误**：所有数据库操作都有 try-catch 保护，不会导致应用崩溃
+4. **IPC 通信错误**：主进程和渲染进程之间的通信都有错误处理
 
 ## 许可证
 

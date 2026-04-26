@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Point, RecordingStatus, Session, SessionInfo, PermissionStatus } from './types'
+import { Point, RecordingStatus, Session, SessionInfo, PermissionStatus, AppError, DbResponse } from './types'
 import './App.css'
 
 const CANVAS_WIDTH = 800
@@ -7,6 +7,10 @@ const CANVAS_HEIGHT = 400
 const POINT_DISPLAY_LIMIT = 2000
 
 const isElectron = typeof window !== 'undefined' && 'electronAPI' in window
+
+function isDbError<T>(response: DbResponse<T>): response is { success: false; error: string } {
+  return !response.success
+}
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -25,19 +29,30 @@ function App() {
   const [duration, setDuration] = useState<number>(0)
   const [startTime, setStartTime] = useState<number | null>(null)
   const [isElectronEnv, setIsElectronEnv] = useState(isElectron)
+  const [appError, setAppError] = useState<AppError | null>(null)
+  const [dbUnavailable, setDbUnavailable] = useState(false)
 
   const loadSessions = useCallback(async () => {
-    if (!isElectronEnv) return
+    if (!isElectronEnv || dbUnavailable) return
+    
     try {
-      const sessionsData = await window.electronAPI.getSessions()
-      setSessions(sessionsData)
+      const result = await window.electronAPI.getSessions()
+      
+      if (isDbError(result)) {
+        console.error('Failed to load sessions:', result.error)
+        setDbUnavailable(true)
+        return
+      }
+      
+      setSessions(result.data)
     } catch (error) {
       console.error('Failed to load sessions:', error)
     }
-  }, [isElectronEnv])
+  }, [isElectronEnv, dbUnavailable])
 
   const checkPermission = useCallback(async () => {
     if (!isElectronEnv) return
+    
     try {
       const status = await window.electronAPI.checkPermission()
       setPermissionStatus(status)
@@ -51,6 +66,7 @@ function App() {
 
   const handleRequestPermission = async () => {
     if (!isElectronEnv) return
+    
     try {
       const status = await window.electronAPI.requestPermission()
       setPermissionStatus(status)
@@ -78,7 +94,7 @@ function App() {
 
   const stopReplay = useCallback(() => {
     if (replayIntervalRef.current) {
-      clearInterval(replayIntervalRef.current)
+      clearTimeout(replayIntervalRef.current)
       replayIntervalRef.current = null
     }
     replayPointsRef.current = []
@@ -152,10 +168,17 @@ function App() {
 
   const handleLoadSession = async (sessionId: string) => {
     if (!isElectronEnv) return
+    
     try {
-      const session = await window.electronAPI.getSession(sessionId)
-      if (session) {
-        startReplay(session)
+      const result = await window.electronAPI.getSession(sessionId)
+      
+      if (isDbError(result)) {
+        console.error('Failed to load session:', result.error)
+        return
+      }
+      
+      if (result.data) {
+        startReplay(result.data)
       }
     } catch (error) {
       console.error('Failed to load session:', error)
@@ -165,9 +188,17 @@ function App() {
   const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (!isElectronEnv) return
+    
     try {
-      await window.electronAPI.deleteSession(sessionId)
+      const result = await window.electronAPI.deleteSession(sessionId)
+      
+      if (isDbError(result)) {
+        console.error('Failed to delete session:', result.error)
+        return
+      }
+      
       await loadSessions()
+      
       if (selectedSession?.id === sessionId) {
         stopReplay()
       }
@@ -333,6 +364,16 @@ function App() {
     })
     cleanupFns.push(unsub6)
 
+    const unsub7 = window.electronAPI.onAppError((error) => {
+      console.error('App error:', error)
+      setAppError(error)
+      
+      if (error.context === 'database_init') {
+        setDbUnavailable(true)
+      }
+    })
+    cleanupFns.push(unsub7)
+
     return () => {
       cleanupFns.forEach(fn => fn())
     }
@@ -392,6 +433,10 @@ function App() {
     return status
   }
 
+  const dismissError = () => {
+    setAppError(null)
+  }
+
   if (!isElectronEnv) {
     return (
       <div className="app">
@@ -430,6 +475,31 @@ function App() {
       </header>
 
       <main className="app-main">
+        {appError && (
+          <div className="error-banner">
+            <div className="error-banner-content">
+              <span className="error-icon">⚠</span>
+              <div>
+                <p className="error-title">发生错误: {appError.context}</p>
+                <p className="error-message">{appError.message}</p>
+              </div>
+              <button className="error-close-btn" onClick={dismissError}>✕</button>
+            </div>
+          </div>
+        )}
+
+        {dbUnavailable && (
+          <div className="error-banner warning-banner">
+            <div className="error-banner-content">
+              <span className="error-icon">💾</span>
+              <div>
+                <p className="error-title">数据库不可用</p>
+                <p className="error-message">历史记录功能将不可用。可能是 better-sqlite3 模块未正确编译。请尝试重新运行 npm run rebuild</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="main-content">
           <div className="left-panel">
             <div className="canvas-container">
@@ -561,7 +631,12 @@ function App() {
           <div className="right-panel">
             <div className="history-section">
               <h3>历史记录</h3>
-              {sessions.length === 0 ? (
+              {dbUnavailable ? (
+                <div className="empty-history">
+                  <p>数据库不可用</p>
+                  <p className="empty-hint">请尝试重新运行 npm run rebuild</p>
+                </div>
+              ) : sessions.length === 0 ? (
                 <div className="empty-history">
                   <p>暂无历史记录</p>
                   <p className="empty-hint">开始记录后，点击停止即可保存</p>
