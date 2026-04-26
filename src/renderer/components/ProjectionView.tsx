@@ -37,17 +37,20 @@ export const ProjectionView = forwardRef<HTMLCanvasElement, ProjectionViewProps>
   },
   ref
 ) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
-  useEffect(() => {
-    if (ref && canvasRef.current) {
-      if (typeof ref === 'function') {
-        ref(canvasRef.current)
-      } else {
-        ref.current = canvasRef.current
-      }
+  const setCanvasRef = useCallback((canvas: HTMLCanvasElement | null) => {
+    canvasRef.current = canvas
+    if (!ref) {
+      return
     }
-  }, [ref])
+    const canvasToForward = points.length > 0 ? canvas : null
+    if (typeof ref === 'function') {
+      ref(canvasToForward)
+    } else {
+      ref.current = canvasToForward
+    }
+  }, [ref, points.length])
 
   const drawProjectionViews = useCallback(() => {
     const canvas = canvasRef.current
@@ -431,7 +434,7 @@ export const ProjectionView = forwardRef<HTMLCanvasElement, ProjectionViewProps>
         <span className="projection-view-note">主画布负责看原始平面轨迹，这里把同一数据换成三种投影视角。</span>
       </div>
       <canvas
-        ref={canvasRef}
+        ref={setCanvasRef}
         width={PROJECTION_VIEW_WIDTH}
         height={PROJECTION_VIEW_HEIGHT}
         className="projection-view-canvas"

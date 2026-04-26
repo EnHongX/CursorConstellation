@@ -42,17 +42,20 @@ export const TrackCanvasPanel = forwardRef<HTMLCanvasElement, TrackCanvasPanelPr
   },
   ref
 ) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
-  useEffect(() => {
-    if (ref && canvasRef.current) {
-      if (typeof ref === 'function') {
-        ref(canvasRef.current)
-      } else {
-        ref.current = canvasRef.current
-      }
+  const setCanvasRef = useCallback((canvas: HTMLCanvasElement | null) => {
+    canvasRef.current = canvas
+    if (!ref) {
+      return
     }
-  }, [ref])
+    const canvasToForward = points.length > 0 ? canvas : null
+    if (typeof ref === 'function') {
+      ref(canvasToForward)
+    } else {
+      ref.current = canvasToForward
+    }
+  }, [ref, points.length])
 
   const normalizePoints = useCallback((inputPoints: Point[]): Point[] => {
     if (inputPoints.length === 0) {
@@ -264,7 +267,7 @@ export const TrackCanvasPanel = forwardRef<HTMLCanvasElement, TrackCanvasPanelPr
       </div>
 
       <canvas
-        ref={canvasRef}
+        ref={setCanvasRef}
         width={CANVAS_WIDTH}
         height={CANVAS_HEIGHT}
         className="track-canvas"
