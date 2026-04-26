@@ -10,6 +10,7 @@
 - **实时显示**：页面上显示当前 session 的点数、开始时间和持续时间
 - **历史记录**：历史 session 列表，可以查看之前保存的记录
 - **轨迹回放**：点击历史记录可以加载并回放轨迹，速度与真实移动一致
+- **时空投影视图**：支持俯视 XY、侧视 Y-T、透视 XY-T 三种同步视角，厚度明确表示时间
 
 ## 技术栈
 
@@ -32,10 +33,12 @@ CursorConstellation/
 │   │   ├── types.ts            # 主进程类型定义
 │   │   └── tsconfig.json       # 主进程 TypeScript 配置
 │   └── renderer/                # React 渲染进程
+│       ├── components/          # 轨迹画布、投影视图、回放控制、分析面板等 UI 组件
 │       ├── types/               # TypeScript 类型定义
 │       │   └── index.ts
-│       ├── App.tsx             # 主应用组件
-│       ├── App.css             # 应用样式
+│       ├── utils/               # 轨迹分析、格式化等共享工具
+│       ├── App.tsx             # 页面容器与状态编排
+│       ├── App.css             # 页面壳子与全局交互样式
 │       ├── main.tsx            # 渲染进程入口
 │       └── index.css           # 全局样式
 ├── dist/                        # 编译输出目录
