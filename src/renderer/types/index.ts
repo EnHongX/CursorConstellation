@@ -5,6 +5,31 @@ export interface Point {
   speed: number;
 }
 
+export type ColorMode = 'time' | 'speed';
+
+export interface SpeedStats {
+  min: number;
+  max: number;
+  avg: number;
+  median: number;
+}
+
+export interface KeyPoint {
+  type: 'pause' | 'turn' | 'speed_change';
+  index: number;
+  timestamp: number;
+  x: number;
+  y: number;
+  description: string;
+}
+
+export interface TimeSegment {
+  start: number;
+  end: number;
+  points: Point[];
+  avgSpeed: number;
+}
+
 export type RecordingStatus = 'idle' | 'recording' | 'paused' | 'stopped' | 'replaying';
 
 export interface SessionInfo {

@@ -1,0 +1,248 @@
+.analysis-card {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.analysis-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  padding: 14px 16px;
+  margin: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.speed-chart-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  padding: 8px;
+}
+
+.analysis-content {
+  padding: 16px;
+}
+
+.stats-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.stat-card-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 500;
+}
+
+.stat-card-value {
+  font-size: 18px;
+  font-weight: 700;
+  background: linear-gradient(90deg, #e94560, #ff6b6b);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.key-points-summary {
+  display: flex;
+  justify-content: space-around;
+  padding: 12px 0;
+  margin-bottom: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.key-point-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.key-point-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.8);
+}
+
+.key-point-icon.pause-icon {
+  background: #fdcb6e;
+}
+
+.key-point-icon.turn-icon {
+  background: #6c5ce7;
+}
+
+.key-point-icon.speed-icon {
+  background: #00b894;
+}
+
+.key-point-count {
+  font-size: 16px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.key-point-label {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.time-segments {
+  margin-bottom: 16px;
+}
+
+.time-segments h4,
+.key-points-list h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 10px;
+}
+
+.segments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.segment-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease;
+}
+
+.segment-item:hover,
+.segment-item.hovered {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(108, 92, 231, 0.3);
+}
+
+.segment-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 60px;
+}
+
+.segment-index {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.segment-duration {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.segment-speed-bar {
+  flex: 1;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.segment-speed-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.segment-avg-speed {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  min-width: 50px;
+  text-align: right;
+}
+
+.points-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.point-list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.point-list-item:hover,
+.point-list-item.selected {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(108, 92, 231, 0.3);
+}
+
+.point-marker {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.point-marker.pause-marker {
+  background: #fdcb6e;
+}
+
+.point-marker.turn-marker {
+  background: #6c5ce7;
+}
+
+.point-marker.speed_change-marker {
+  background: #00b894;
+}
+
+.point-details {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.point-type {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.point-time {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+  white-space: nowrap;
+}
+
+.more-points-hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.42);
+  text-align: center;
+  padding-top: 4px;
+}
