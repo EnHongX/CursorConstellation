@@ -704,7 +704,7 @@ function App() {
       const normalizedY = (point.y - minY) / rangeY
 
       const baseX = padding.left + normalizedX * availableWidth
-      const baseY = padding.top + (1 - normalizedY) * availableHeight
+      const baseY = padding.top + normalizedY * availableHeight
 
       const timeOffset = timeProgress * 80
       const parallaxX = timeProgress * 30
@@ -752,7 +752,7 @@ function App() {
 
     ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'
     ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif'
-    ctx.fillText('时间轴 (从后往前)', VIEW_4D_WIDTH / 2 - 40, 25)
+    ctx.fillText('时间轴：从下往上 = 从早到晚', VIEW_4D_WIDTH / 2 - 55, 25)
     
     const timeStartPoint = projectTo4D({ x: (minX + maxX) / 2, y: (minY + maxY) / 2, timestamp: startTime, speed: 0 }, 0)
     const timeEndPoint = projectTo4D({ x: (minX + maxX) / 2, y: (minY + maxY) / 2, timestamp: endTime, speed: 0 }, 1)
@@ -774,9 +774,9 @@ function App() {
 
     ctx.fillStyle = 'rgba(100, 200, 255, 0.7)'
     ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif'
-    ctx.fillText('开始', timeStartPoint.x - 10, 32)
+    ctx.fillText('起点(早)', timeStartPoint.x - 25, 32)
     ctx.fillStyle = 'rgba(255, 200, 100, 0.7)'
-    ctx.fillText('结束', timeEndPoint.x - 10, 32)
+    ctx.fillText('终点(晚)', timeEndPoint.x - 25, 32)
 
     ctx.lineWidth = 2.5
     ctx.lineCap = 'round'
@@ -844,38 +844,100 @@ function App() {
         lastColor = getColorBySpeed(lastPoint.speed, speedStats.min, speedStats.max)
       }
 
+      const firstGradient = ctx.createRadialGradient(
+        first2D.x, first2D.y, 0,
+        first2D.x, first2D.y, 25
+      )
+      firstGradient.addColorStop(0, `rgba(100, 200, 255, 0.4)`)
+      firstGradient.addColorStop(1, `rgba(100, 200, 255, 0)`)
+      ctx.fillStyle = firstGradient
+      ctx.beginPath()
+      ctx.arc(first2D.x, first2D.y, 25, 0, Math.PI * 2)
+      ctx.fill()
+
       ctx.fillStyle = `rgb(${firstColor.r}, ${firstColor.g}, ${firstColor.b})`
       ctx.beginPath()
-      ctx.arc(first2D.x, first2D.y, 7, 0, Math.PI * 2)
+      ctx.arc(first2D.x, first2D.y, 8, 0, Math.PI * 2)
       ctx.fill()
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)'
-      ctx.lineWidth = 2
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)'
+      ctx.lineWidth = 3
       ctx.stroke()
 
-      ctx.fillStyle = 'rgba(100, 200, 255, 0.9)'
-      ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif'
-      ctx.fillText('起点', first2D.x + 10, first2D.y - 8)
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
+      ctx.fillRect(first2D.x + 12, first2D.y - 18, 50, 20)
+      ctx.strokeStyle = 'rgba(100, 200, 255, 0.8)'
+      ctx.lineWidth = 1.5
+      ctx.strokeRect(first2D.x + 12, first2D.y - 18, 50, 20)
+      
+      ctx.fillStyle = 'rgba(100, 200, 255, 1)'
+      ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, sans-serif'
+      ctx.fillText('起点', first2D.x + 18, first2D.y - 4)
+      
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'
+      ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif'
+      ctx.fillText(`速度: ${firstPoint.speed.toFixed(1)}`, first2D.x + 18, first2D.y + 8)
+
+      const lastGradient = ctx.createRadialGradient(
+        last2D.x, last2D.y, 0,
+        last2D.x, last2D.y, 30
+      )
+      lastGradient.addColorStop(0, `rgba(255, 200, 100, 0.5)`)
+      lastGradient.addColorStop(1, `rgba(255, 200, 100, 0)`)
+      ctx.fillStyle = lastGradient
+      ctx.beginPath()
+      ctx.arc(last2D.x, last2D.y, 30, 0, Math.PI * 2)
+      ctx.fill()
 
       ctx.fillStyle = `rgb(${lastColor.r}, ${lastColor.g}, ${lastColor.b})`
       ctx.beginPath()
-      ctx.arc(last2D.x, last2D.y, 7, 0, Math.PI * 2)
+      ctx.arc(last2D.x, last2D.y, 9, 0, Math.PI * 2)
       ctx.fill()
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)'
-      ctx.lineWidth = 2
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)'
+      ctx.lineWidth = 3
       ctx.stroke()
 
-      ctx.fillStyle = 'rgba(255, 200, 100, 0.9)'
-      ctx.fillText('终点', last2D.x + 10, last2D.y - 8)
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
+      ctx.fillRect(last2D.x + 12, last2D.y - 18, 50, 20)
+      ctx.strokeStyle = 'rgba(255, 200, 100, 0.8)'
+      ctx.lineWidth = 1.5
+      ctx.strokeRect(last2D.x + 12, last2D.y - 18, 50, 20)
+      
+      ctx.fillStyle = 'rgba(255, 200, 100, 1)'
+      ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, sans-serif'
+      ctx.fillText('终点', last2D.x + 18, last2D.y - 4)
+      
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'
+      ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif'
+      ctx.fillText(`速度: ${lastPoint.speed.toFixed(1)}`, last2D.x + 18, last2D.y + 8)
 
-      const gradient = ctx.createRadialGradient(
-        last2D.x, last2D.y, 0,
-        last2D.x, last2D.y, 25
-      )
-      gradient.addColorStop(0, `rgba(${lastColor.r}, ${lastColor.g}, ${lastColor.b}, 0.4)`)
-      gradient.addColorStop(1, `rgba(${lastColor.r}, ${lastColor.g}, ${lastColor.b}, 0)`)
-      ctx.fillStyle = gradient
+      ctx.strokeStyle = 'rgba(100, 200, 255, 0.4)'
+      ctx.lineWidth = 2
+      ctx.setLineDash([8, 4])
       ctx.beginPath()
-      ctx.arc(last2D.x, last2D.y, 25, 0, Math.PI * 2)
+      ctx.moveTo(first2D.x, first2D.y)
+      ctx.lineTo(last2D.x, last2D.y)
+      ctx.stroke()
+      ctx.setLineDash([])
+      
+      const midX = (first2D.x + last2D.x) / 2
+      const midY = (first2D.y + last2D.y) / 2
+      
+      const angle = Math.atan2(last2D.y - first2D.y, last2D.x - first2D.x)
+      const arrowLen = 15
+      const arrowAngle = Math.PI / 6
+      
+      ctx.fillStyle = 'rgba(100, 200, 255, 0.6)'
+      ctx.beginPath()
+      ctx.moveTo(midX, midY)
+      ctx.lineTo(
+        midX - arrowLen * Math.cos(angle - arrowAngle),
+        midY - arrowLen * Math.sin(angle - arrowAngle)
+      )
+      ctx.lineTo(
+        midX - arrowLen * Math.cos(angle + arrowAngle),
+        midY - arrowLen * Math.sin(angle + arrowAngle)
+      )
+      ctx.closePath()
       ctx.fill()
     }
 
@@ -931,7 +993,7 @@ function App() {
 
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'
     ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif'
-    ctx.fillText('提示：越靠后（视觉上越远）的点时间越早，越靠前的点时间越晚', padding.left, VIEW_4D_HEIGHT - 10)
+    ctx.fillText('提示：越靠下的点时间越早（起点），越靠上的点时间越晚（终点）| Y轴方向与屏幕一致：Y越大越靠下', padding.left, VIEW_4D_HEIGHT - 10)
   }, [points, colorMode, showKeyPoints, selectedKeyPoint])
 
   const drawSpeedChart = useCallback(() => {
