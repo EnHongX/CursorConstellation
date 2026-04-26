@@ -1,4 +1,4 @@
-import React, { RefObject, useState } from 'react'
+import React, { RefObject, useEffect, useRef, useState } from 'react'
 import { RecordingStatus, Session } from '../types'
 import { formatDuration, formatTimeShort, formatTimestamp } from '../utils/format'
 import './ReplayControlsPanel.css'
@@ -39,27 +39,84 @@ export function ReplayControlsPanel({
 }: ReplayControlsPanelProps) {
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [showPNGSubmenu, setShowPNGSubmenu] = useState(false)
+  const menuContainerRef = useRef<HTMLDivElement>(null)
+  const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const handleExportJSON = () => {
     onExport('json')
-    setShowExportMenu(false)
+    closeMenus()
   }
 
   const handleExportPNG = (view: ExportView) => {
     onExport('png', view)
-    setShowExportMenu(false)
-    setShowPNGSubmenu(false)
+    closeMenus()
   }
 
   const toggleExportMenu = () => {
-    setShowExportMenu(!showExportMenu)
-    setShowPNGSubmenu(false)
+    if (showExportMenu) {
+      closeMenus()
+    } else {
+      setShowExportMenu(true)
+      setShowPNGSubmenu(false)
+    }
   }
 
   const closeMenus = () => {
     setShowExportMenu(false)
     setShowPNGSubmenu(false)
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current)
+      hideTimeoutRef.current = null
+    }
   }
+
+  const handlePNGItemMouseEnter = () => {
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current)
+      hideTimeoutRef.current = null
+    }
+    if (status !== 'replaying') {
+      setShowPNGSubmenu(true)
+    }
+  }
+
+  const handlePNGItemMouseLeave = () => {
+    hideTimeoutRef.current = setTimeout(() => {
+      setShowPNGSubmenu(false)
+    }, 300)
+  }
+
+  const handleSubmenuMouseEnter = () => {
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current)
+      hideTimeoutRef.current = null
+    }
+  }
+
+  const handleSubmenuMouseLeave = () => {
+    hideTimeoutRef.current = setTimeout(() => {
+      setShowPNGSubmenu(false)
+    }, 300)
+  }
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuContainerRef.current && !menuContainerRef.current.contains(event.target as Node)) {
+        closeMenus()
+      }
+    }
+
+    if (showExportMenu) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current)
+      }
+    }
+  }, [showExportMenu])
 
   return (
     <div className="replay-controls">
@@ -69,7 +126,7 @@ export function ReplayControlsPanel({
           <span className="replay-session-info">
             {formatTimestamp(loadedSession.startTime)} · {formatDuration(loadedSession.duration)}
           </span>
-          <div className="export-menu-container">
+          <div className="export-menu-container" ref={menuContainerRef}>
             <button
               className={`export-btn ${status === 'replaying' ? 'disabled' : ''}`}
               onClick={toggleExportMenu}
@@ -79,7 +136,7 @@ export function ReplayControlsPanel({
               导出
             </button>
             {showExportMenu && (
-              <div className="export-menu" onMouseLeave={closeMenus}>
+              <div className="export-menu">
                 <div
                   className={`export-menu-item ${status === 'replaying' ? 'disabled' : ''}`}
                   onClick={status !== 'replaying' ? handleExportJSON : undefined}
@@ -89,14 +146,18 @@ export function ReplayControlsPanel({
                 </div>
                 <div
                   className={`export-menu-item has-submenu ${status === 'replaying' ? 'disabled' : ''}`}
-                  onMouseEnter={() => status !== 'replaying' && setShowPNGSubmenu(true)}
-                  onMouseLeave={() => setShowPNGSubmenu(false)}
+                  onMouseEnter={handlePNGItemMouseEnter}
+                  onMouseLeave={handlePNGItemMouseLeave}
                 >
                   <span className="menu-icon">🖼️</span>
                   导出 PNG
                   <span className="submenu-arrow">▶</span>
                   {showPNGSubmenu && (
-                    <div className="export-submenu">
+                    <div
+                      className="export-submenu"
+                      onMouseEnter={handleSubmenuMouseEnter}
+                      onMouseLeave={handleSubmenuMouseLeave}
+                    >
                       <div
                         className="export-menu-item"
                         onClick={() => handleExportPNG('track')}
