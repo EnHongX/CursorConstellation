@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { HistoryPanel } from './components/HistoryPanel'
 import { ProjectionView } from './components/ProjectionView'
-import { ReplayControlsPanel } from './components/ReplayControlsPanel'
+import { ExportFormat, ExportView, ReplayControlsPanel } from './components/ReplayControlsPanel'
 import { SpeedChartPanel } from './components/SpeedChartPanel'
 import { TrackCanvasPanel } from './components/TrackCanvasPanel'
 import { TrajectoryAnalysisPanel } from './components/TrajectoryAnalysisPanel'
@@ -31,6 +31,8 @@ function isDbError<T>(response: DbResponse<T>): response is { success: false; er
 function App() {
   const isElectronEnv = isElectron
   const timelineRef = useRef<HTMLDivElement>(null)
+  const trackCanvasRef = useRef<HTMLCanvasElement>(null)
+  const projectionCanvasRef = useRef<HTMLCanvasElement>(null)
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const replayIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const replayPointsRef = useRef<Point[]>([])
@@ -301,6 +303,60 @@ function App() {
     }
   }
 
+  const handleExport = useCallback((format: ExportFormat, view?: ExportView) => {
+    if (!loadedSession) {
+      return
+    }
+
+    if (format === 'json') {
+      const pointsInRange = getPointsInTimeRange(loadedSession, timeRangeStart, timeRangeEnd)
+      const exportData = {
+        sessionId: loadedSession.id,
+        startTime: loadedSession.startTime + timeRangeStart,
+        endTime: loadedSession.startTime + timeRangeEnd,
+        duration: timeRangeEnd - timeRangeStart,
+        pointCount: pointsInRange.length,
+        points: pointsInRange.map((point) => ({
+          x: point.x,
+          y: point.y,
+          timestamp: point.timestamp,
+          speed: point.speed,
+        })),
+      }
+
+      const jsonString = JSON.stringify(exportData, null, 2)
+      const blob = new Blob([jsonString], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `session_${loadedSession.id}_${Date.now()}.json`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } else if (format === 'png') {
+      const exportCanvas = (canvas: HTMLCanvasElement | null, suffix: string) => {
+        if (!canvas) {
+          return
+        }
+        const url = canvas.toDataURL('image/png')
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `session_${loadedSession.id}_${suffix}_${Date.now()}.png`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+      }
+
+      if (view === 'track' || view === 'both') {
+        exportCanvas(trackCanvasRef.current, 'track')
+      }
+      if (view === 'projection' || view === 'both') {
+        exportCanvas(projectionCanvasRef.current, 'projection')
+      }
+    }
+  }, [loadedSession, getPointsInTimeRange, timeRangeStart, timeRangeEnd])
+
   const handlePlaybackSpeedChange = useCallback((speed: number) => {
     setPlaybackSpeed(speed)
     playbackSpeedRef.current = speed
@@ -563,6 +619,7 @@ function App() {
         <div className="main-content">
           <div className="left-panel">
             <TrackCanvasPanel
+              ref={trackCanvasRef}
               colorMode={colorMode}
               loadedSession={loadedSession}
               playbackSpeed={playbackSpeed}
@@ -576,6 +633,7 @@ function App() {
             />
 
             <ProjectionView
+              ref={projectionCanvasRef}
               colorMode={colorMode}
               points={points}
               selectedKeyPoint={selectedKeyPoint}
@@ -591,6 +649,7 @@ function App() {
                 timeRangeEnd={timeRangeEnd}
                 timeRangeStart={timeRangeStart}
                 timelineRef={timelineRef}
+                onExport={handleExport}
                 onPlay={handlePlayReplay}
                 onPlaybackSpeedChange={handlePlaybackSpeedChange}
                 onStop={stopReplay}

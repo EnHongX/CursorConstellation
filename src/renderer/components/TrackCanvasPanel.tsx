@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react'
+import React, { forwardRef, useCallback, useEffect, useRef } from 'react'
 import { ColorMode, KeyPoint, Point, RecordingStatus, Session } from '../types'
 import {
   calculateSpeedStats,
@@ -27,19 +27,32 @@ interface TrackCanvasPanelProps {
   onShowKeyPointsChange: (show: boolean) => void
 }
 
-export function TrackCanvasPanel({
-  colorMode,
-  loadedSession,
-  playbackSpeed,
-  points,
-  selectedKeyPoint,
-  selectedSession,
-  showKeyPoints,
-  status,
-  onColorModeChange,
-  onShowKeyPointsChange,
-}: TrackCanvasPanelProps) {
+export const TrackCanvasPanel = forwardRef<HTMLCanvasElement, TrackCanvasPanelProps>(function TrackCanvasPanel(
+  {
+    colorMode,
+    loadedSession,
+    playbackSpeed,
+    points,
+    selectedKeyPoint,
+    selectedSession,
+    showKeyPoints,
+    status,
+    onColorModeChange,
+    onShowKeyPointsChange,
+  },
+  ref
+) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    if (ref && canvasRef.current) {
+      if (typeof ref === 'function') {
+        ref(canvasRef.current)
+      } else {
+        ref.current = canvasRef.current
+      }
+    }
+  }, [ref])
 
   const normalizePoints = useCallback((inputPoints: Point[]): Point[] => {
     if (inputPoints.length === 0) {
@@ -329,4 +342,4 @@ export function TrackCanvasPanel({
       )}
     </div>
   )
-}
+})

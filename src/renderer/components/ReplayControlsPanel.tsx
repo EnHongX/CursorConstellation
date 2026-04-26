@@ -1,7 +1,10 @@
-import React, { RefObject } from 'react'
+import React, { RefObject, useState } from 'react'
 import { RecordingStatus, Session } from '../types'
 import { formatDuration, formatTimeShort, formatTimestamp } from '../utils/format'
 import './ReplayControlsPanel.css'
+
+export type ExportFormat = 'json' | 'png'
+export type ExportView = 'track' | 'projection' | 'both'
 
 interface ReplayControlsPanelProps {
   loadedSession: Session
@@ -11,6 +14,7 @@ interface ReplayControlsPanelProps {
   timeRangeEnd: number
   timeRangeStart: number
   timelineRef: RefObject<HTMLDivElement | null>
+  onExport: (format: ExportFormat, view?: ExportView) => void
   onPlay: () => void
   onPlaybackSpeedChange: (speed: number) => void
   onStop: () => void
@@ -26,19 +30,101 @@ export function ReplayControlsPanel({
   timeRangeEnd,
   timeRangeStart,
   timelineRef,
+  onExport,
   onPlay,
   onPlaybackSpeedChange,
   onStop,
   onTimelineMouseDown,
   onTimelineMouseMove,
 }: ReplayControlsPanelProps) {
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const [showPNGSubmenu, setShowPNGSubmenu] = useState(false)
+
+  const handleExportJSON = () => {
+    onExport('json')
+    setShowExportMenu(false)
+  }
+
+  const handleExportPNG = (view: ExportView) => {
+    onExport('png', view)
+    setShowExportMenu(false)
+    setShowPNGSubmenu(false)
+  }
+
+  const toggleExportMenu = () => {
+    setShowExportMenu(!showExportMenu)
+    setShowPNGSubmenu(false)
+  }
+
+  const closeMenus = () => {
+    setShowExportMenu(false)
+    setShowPNGSubmenu(false)
+  }
+
   return (
     <div className="replay-controls">
       <div className="replay-header">
         <span className="replay-title">回放控制</span>
-        <span className="replay-session-info">
-          {formatTimestamp(loadedSession.startTime)} · {formatDuration(loadedSession.duration)}
-        </span>
+        <div className="replay-header-right">
+          <span className="replay-session-info">
+            {formatTimestamp(loadedSession.startTime)} · {formatDuration(loadedSession.duration)}
+          </span>
+          <div className="export-menu-container">
+            <button
+              className={`export-btn ${status === 'replaying' ? 'disabled' : ''}`}
+              onClick={toggleExportMenu}
+              disabled={status === 'replaying'}
+            >
+              <span className="btn-icon">📥</span>
+              导出
+            </button>
+            {showExportMenu && (
+              <div className="export-menu" onMouseLeave={closeMenus}>
+                <div
+                  className={`export-menu-item ${status === 'replaying' ? 'disabled' : ''}`}
+                  onClick={status !== 'replaying' ? handleExportJSON : undefined}
+                >
+                  <span className="menu-icon">📄</span>
+                  导出 JSON
+                </div>
+                <div
+                  className={`export-menu-item has-submenu ${status === 'replaying' ? 'disabled' : ''}`}
+                  onMouseEnter={() => status !== 'replaying' && setShowPNGSubmenu(true)}
+                  onMouseLeave={() => setShowPNGSubmenu(false)}
+                >
+                  <span className="menu-icon">🖼️</span>
+                  导出 PNG
+                  <span className="submenu-arrow">▶</span>
+                  {showPNGSubmenu && (
+                    <div className="export-submenu">
+                      <div
+                        className="export-menu-item"
+                        onClick={() => handleExportPNG('track')}
+                      >
+                        <span className="menu-icon">📍</span>
+                        主轨迹图
+                      </div>
+                      <div
+                        className="export-menu-item"
+                        onClick={() => handleExportPNG('projection')}
+                      >
+                        <span className="menu-icon">📊</span>
+                        时空投影视图
+                      </div>
+                      <div
+                        className="export-menu-item"
+                        onClick={() => handleExportPNG('both')}
+                      >
+                        <span className="menu-icon">🗂️</span>
+                        全部导出
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="speed-controls">

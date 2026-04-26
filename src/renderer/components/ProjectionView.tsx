@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react'
+import React, { forwardRef, useCallback, useEffect, useRef } from 'react'
 import { ColorMode, KeyPoint, Point } from '../types'
 import {
   calculateSpeedStats,
@@ -28,13 +28,26 @@ interface ProjectionViewProps {
   showKeyPoints: boolean
 }
 
-export function ProjectionView({
-  colorMode,
-  points,
-  selectedKeyPoint,
-  showKeyPoints,
-}: ProjectionViewProps) {
+export const ProjectionView = forwardRef<HTMLCanvasElement, ProjectionViewProps>(function ProjectionView(
+  {
+    colorMode,
+    points,
+    selectedKeyPoint,
+    showKeyPoints,
+  },
+  ref
+) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    if (ref && canvasRef.current) {
+      if (typeof ref === 'function') {
+        ref(canvasRef.current)
+      } else {
+        ref.current = canvasRef.current
+      }
+    }
+  }, [ref])
 
   const drawProjectionViews = useCallback(() => {
     const canvas = canvasRef.current
@@ -425,4 +438,4 @@ export function ProjectionView({
       />
     </div>
   )
-}
+})
