@@ -5,6 +5,8 @@ import './App.css'
 const CANVAS_WIDTH = 800
 const CANVAS_HEIGHT = 400
 const POINT_DISPLAY_LIMIT = 2000
+const DEFAULT_TIME_RANGE_MS = 5000
+const PLAYBACK_SPEEDS = [1, 2, 5, 10, 20]
 
 const isElectron = typeof window !== 'undefined' && 'electronAPI' in window
 
@@ -12,12 +14,40 @@ function isDbError<T>(response: DbResponse<T>): response is { success: false; er
   return !response.success
 }
 
+function getColorByProgress(progress: number): { r: number; g: number; b: number } {
+  const startColor = { r: 100, g: 200, b: 255 }
+  const midColor = { r: 233, g: 69, b: 96 }
+  const endColor = { r: 255, g: 200, b: 100 }
+
+  let color: { r: number; g: number; b: number }
+
+  if (progress < 0.5) {
+    const t = progress * 2
+    color = {
+      r: Math.round(startColor.r + (midColor.r - startColor.r) * t),
+      g: Math.round(startColor.g + (midColor.g - startColor.g) * t),
+      b: Math.round(startColor.b + (midColor.b - startColor.b) * t),
+    }
+  } else {
+    const t = (progress - 0.5) * 2
+    color = {
+      r: Math.round(midColor.r + (endColor.r - midColor.r) * t),
+      g: Math.round(midColor.g + (endColor.g - midColor.g) * t),
+      b: Math.round(midColor.b + (endColor.b - midColor.b) * t),
+    }
+  }
+
+  return color
+}
+
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const timelineRef = useRef<HTMLDivElement>(null)
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const replayIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const replayPointsRef = useRef<Point[]>([])
   const replayIndexRef = useRef<number>(0)
+  const playbackSpeedRef = useRef<number>(1)
 
   const [status, setStatus] = useState<RecordingStatus>('idle')
   const [points, setPoints] = useState<Point[]>([])
@@ -31,6 +61,16 @@ function App() {
   const [isElectronEnv, setIsElectronEnv] = useState(isElectron)
   const [appError, setAppError] = useState<AppError | null>(null)
   const [dbUnavailable, setDbUnavailable] = useState(false)
+
+  const [loadedSession, setLoadedSession] = useState<Session | null>(null)
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1)
+  const [timeRangeStart, setTimeRangeStart] = useState<number>(0)
+  const [timeRangeEnd, setTimeRangeEnd] = useState<number>(0)
+  const [isDraggingLeft, setIsDraggingLeft] = useState(false)
+  const [isDraggingRight, setIsDraggingRight] = useState(false)
+  const [isDraggingRange, setIsDraggingRange] = useState(false)
+  const [dragStartX, setDragStartX] = useState(0)
+  const [dragStartRange, setDragStartRange] = useState({ start: 0, end: 0 })
 
   const loadSessions = useCallback(async () => {
     if (!isElectronEnv || dbUnavailable) return
@@ -100,18 +140,32 @@ function App() {
     replayPointsRef.current = []
     replayIndexRef.current = 0
     setStatus('idle')
-    setSelectedSession(null)
     setPoints([])
   }, [])
 
-  const startReplay = useCallback((session: Session) => {
-    if (session.points.length === 0) return
+  const getPointsInTimeRange = useCallback((session: Session, startMs: number, endMs: number): Point[] => {
+    if (session.points.length === 0) return []
+    
+    const sessionStartTime = session.startTime
+    const rangeStartTimestamp = sessionStartTime + startMs
+    const rangeEndTimestamp = sessionStartTime + endMs
+
+    return session.points.filter(
+      point => point.timestamp >= rangeStartTimestamp && point.timestamp <= rangeEndTimestamp
+    )
+  }, [])
+
+  const startReplay = useCallback((session: Session, startMs: number, endMs: number, speed: number) => {
+    const pointsInRange = getPointsInTimeRange(session, startMs, endMs)
+    
+    if (pointsInRange.length === 0) return
 
     stopReplay()
     setStatus('replaying')
     setSelectedSession(session)
-    replayPointsRef.current = session.points
+    replayPointsRef.current = pointsInRange
     replayIndexRef.current = 0
+    playbackSpeedRef.current = speed
     setPoints([])
 
     const replayNext = () => {
@@ -127,7 +181,7 @@ function App() {
       replayIndexRef.current++
 
       if (nextPoint) {
-        const delay = nextPoint.timestamp - currentPoint.timestamp
+        const delay = (nextPoint.timestamp - currentPoint.timestamp) / playbackSpeedRef.current
         replayIntervalRef.current = setTimeout(replayNext, Math.max(delay, 1))
       } else {
         stopReplay()
@@ -135,13 +189,14 @@ function App() {
     }
 
     replayNext()
-  }, [stopReplay])
+  }, [stopReplay, getPointsInTimeRange])
 
   const handleStart = () => {
     if (!isElectronEnv) return
     setPoints([])
     setSessionInfo(null)
     setSelectedSession(null)
+    setLoadedSession(null)
     setDuration(0)
     setStartTime(Date.now())
     window.electronAPI.startRecording()
@@ -166,6 +221,19 @@ function App() {
     stopDurationTimer()
   }
 
+  const initTimeRange = useCallback((session: Session) => {
+    const totalDuration = session.duration
+    const defaultRange = Math.min(DEFAULT_TIME_RANGE_MS, totalDuration)
+    const start = totalDuration - defaultRange
+    const end = totalDuration
+
+    setTimeRangeStart(start)
+    setTimeRangeEnd(end)
+
+    const pointsInRange = getPointsInTimeRange(session, start, end)
+    setPoints(pointsInRange)
+  }, [getPointsInTimeRange])
+
   const handleLoadSession = async (sessionId: string) => {
     if (!isElectronEnv) return
     
@@ -178,11 +246,19 @@ function App() {
       }
       
       if (result.data) {
-        startReplay(result.data)
+        stopReplay()
+        setLoadedSession(result.data)
+        setSelectedSession(result.data)
+        initTimeRange(result.data)
       }
     } catch (error) {
       console.error('Failed to load session:', error)
     }
+  }
+
+  const handlePlayReplay = () => {
+    if (!loadedSession) return
+    startReplay(loadedSession, timeRangeStart, timeRangeEnd, playbackSpeed)
   }
 
   const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
@@ -199,15 +275,18 @@ function App() {
       
       await loadSessions()
       
-      if (selectedSession?.id === sessionId) {
+      if (loadedSession?.id === sessionId) {
         stopReplay()
+        setLoadedSession(null)
+        setSelectedSession(null)
+        setPoints([])
       }
     } catch (error) {
       console.error('Failed to delete session:', error)
     }
   }
 
-  const normalizePoints = useCallback((inputPoints: Point[]): { x: number; y: number; speed: number }[] => {
+  const normalizePoints = useCallback((inputPoints: Point[]): { x: number; y: number; speed: number; timestamp: number }[] => {
     if (inputPoints.length === 0) return []
 
     let minX = Infinity, maxX = -Infinity
@@ -241,7 +320,8 @@ function App() {
     return inputPoints.map(point => ({
       x: canvasCenterX + (point.x - centerX) * scale,
       y: canvasCenterY + (point.y - centerY) * scale,
-      speed: point.speed
+      speed: point.speed,
+      timestamp: point.timestamp,
     }))
   }, [])
 
@@ -281,43 +361,138 @@ function App() {
 
     if (normalizedPoints.length === 0) return
 
-    ctx.strokeStyle = '#e94560'
     ctx.lineWidth = 2
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
 
-    ctx.beginPath()
-    ctx.moveTo(normalizedPoints[0].x, normalizedPoints[0].y)
     for (let i = 1; i < normalizedPoints.length; i++) {
+      const progress = i / (normalizedPoints.length - 1)
+      const color = getColorByProgress(progress)
+      ctx.strokeStyle = `rgb(${color.r}, ${color.g}, ${color.b})`
+      ctx.beginPath()
+      ctx.moveTo(normalizedPoints[i - 1].x, normalizedPoints[i - 1].y)
       ctx.lineTo(normalizedPoints[i].x, normalizedPoints[i].y)
+      ctx.stroke()
     }
-    ctx.stroke()
 
     const lastNPoints = Math.min(normalizedPoints.length, 100)
     const startIndex = normalizedPoints.length - lastNPoints
 
     for (let i = startIndex; i < normalizedPoints.length; i++) {
       const point = normalizedPoints[i]
+      const progress = i / (normalizedPoints.length - 1)
+      const color = getColorByProgress(progress)
       const alpha = 0.3 + ((i - startIndex) / lastNPoints) * 0.7
-      ctx.fillStyle = `rgba(233, 69, 96, ${alpha})`
+      ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`
       ctx.beginPath()
       const size = i === normalizedPoints.length - 1 ? 6 : 3
       ctx.arc(point.x, point.y, size, 0, Math.PI * 2)
       ctx.fill()
     }
 
-    const lastPoint = normalizedPoints[normalizedPoints.length - 1]
-    const gradient = ctx.createRadialGradient(
-      lastPoint.x, lastPoint.y, 0,
-      lastPoint.x, lastPoint.y, 20
-    )
-    gradient.addColorStop(0, 'rgba(233, 69, 96, 0.5)')
-    gradient.addColorStop(1, 'rgba(233, 69, 96, 0)')
-    ctx.fillStyle = gradient
-    ctx.beginPath()
-    ctx.arc(lastPoint.x, lastPoint.y, 20, 0, Math.PI * 2)
-    ctx.fill()
+    if (normalizedPoints.length > 0) {
+      const lastPoint = normalizedPoints[normalizedPoints.length - 1]
+      const lastProgress = (normalizedPoints.length - 1) / Math.max(normalizedPoints.length - 1, 1)
+      const lastColor = getColorByProgress(lastProgress)
+      const gradient = ctx.createRadialGradient(
+        lastPoint.x, lastPoint.y, 0,
+        lastPoint.x, lastPoint.y, 20
+      )
+      gradient.addColorStop(0, `rgba(${lastColor.r}, ${lastColor.g}, ${lastColor.b}, 0.5)`)
+      gradient.addColorStop(1, `rgba(${lastColor.r}, ${lastColor.g}, ${lastColor.b}, 0)`)
+      ctx.fillStyle = gradient
+      ctx.beginPath()
+      ctx.arc(lastPoint.x, lastPoint.y, 20, 0, Math.PI * 2)
+      ctx.fill()
+    }
   }, [points, normalizePoints])
+
+  const getTimelinePosition = useCallback((clientX: number): number => {
+    if (!timelineRef.current) return 0
+    const rect = timelineRef.current.getBoundingClientRect()
+    const x = Math.max(0, Math.min(clientX - rect.left, rect.width))
+    return x / rect.width
+  }, [])
+
+  const handleTimelineMouseDown = useCallback((e: React.MouseEvent, type: 'left' | 'right' | 'range') => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    if (type === 'left') {
+      setIsDraggingLeft(true)
+    } else if (type === 'right') {
+      setIsDraggingRight(true)
+    } else {
+      setIsDraggingRange(true)
+      setDragStartX(e.clientX)
+      setDragStartRange({ start: timeRangeStart, end: timeRangeEnd })
+    }
+  }, [timeRangeStart, timeRangeEnd])
+
+  const handleTimelineMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!loadedSession) return
+    const totalDuration = loadedSession.duration
+
+    if (isDraggingLeft) {
+      const position = getTimelinePosition(e.clientX)
+      const newStart = Math.max(0, Math.min(position * totalDuration, timeRangeEnd - 100))
+      setTimeRangeStart(newStart)
+      const pointsInRange = getPointsInTimeRange(loadedSession, newStart, timeRangeEnd)
+      setPoints(pointsInRange)
+    } else if (isDraggingRight) {
+      const position = getTimelinePosition(e.clientX)
+      const newEnd = Math.max(timeRangeStart + 100, Math.min(position * totalDuration, totalDuration))
+      setTimeRangeEnd(newEnd)
+      const pointsInRange = getPointsInTimeRange(loadedSession, timeRangeStart, newEnd)
+      setPoints(pointsInRange)
+    } else if (isDraggingRange) {
+      const deltaX = e.clientX - dragStartX
+      const timelineWidth = timelineRef.current?.getBoundingClientRect().width || 1
+      const deltaTime = (deltaX / timelineWidth) * totalDuration
+      
+      let newStart = dragStartRange.start + deltaTime
+      let newEnd = dragStartRange.end + deltaTime
+      
+      if (newStart < 0) {
+        newEnd = newEnd - newStart
+        newStart = 0
+      }
+      if (newEnd > totalDuration) {
+        newStart = newStart - (newEnd - totalDuration)
+        newEnd = totalDuration
+      }
+      
+      setTimeRangeStart(newStart)
+      setTimeRangeEnd(newEnd)
+      const pointsInRange = getPointsInTimeRange(loadedSession, newStart, newEnd)
+      setPoints(pointsInRange)
+    }
+  }, [isDraggingLeft, isDraggingRight, isDraggingRange, loadedSession, timeRangeStart, timeRangeEnd, getTimelinePosition, getPointsInTimeRange, dragStartX, dragStartRange])
+
+  const handleTimelineMouseUp = useCallback(() => {
+    setIsDraggingLeft(false)
+    setIsDraggingRight(false)
+    setIsDraggingRange(false)
+  }, [])
+
+  useEffect(() => {
+    if (isDraggingLeft || isDraggingRight || isDraggingRange) {
+      const handleGlobalMouseMove = (e: MouseEvent) => {
+        handleTimelineMouseMove(e as unknown as React.MouseEvent)
+      }
+      const handleGlobalMouseUp = () => {
+        handleTimelineMouseUp()
+      }
+      
+      window.addEventListener('mousemove', handleGlobalMouseMove)
+      window.addEventListener('mouseup', handleGlobalMouseUp)
+      
+      return () => {
+        window.removeEventListener('mousemove', handleGlobalMouseMove)
+        window.removeEventListener('mouseup', handleGlobalMouseUp)
+      }
+    }
+  }, [isDraggingLeft, isDraggingRight, isDraggingRange, handleTimelineMouseMove, handleTimelineMouseUp])
 
   useEffect(() => {
     if (!isElectronEnv) return
@@ -404,6 +579,11 @@ function App() {
       return `${minutes}分${remainingSeconds}秒`
     }
     return `${remainingSeconds}秒`
+  }
+
+  const formatTimeShort = (ms: number): string => {
+    const seconds = (ms / 1000).toFixed(1)
+    return `${seconds}秒`
   }
 
   const formatTimestamp = (ts: number): string => {
@@ -509,17 +689,110 @@ function App() {
                 height={CANVAS_HEIGHT}
                 className="track-canvas"
               />
-              {status === 'idle' && points.length === 0 && (
+              {status === 'idle' && points.length === 0 && !loadedSession && (
                 <div className="canvas-overlay">
                   <p>点击「开始」按钮开始记录鼠标轨迹</p>
+                  <p className="canvas-hint">或选择右侧历史记录查看</p>
                 </div>
               )}
               {status === 'replaying' && (
                 <div className="replay-indicator">
                   <span>回放中 - {selectedSession?.id}</span>
+                  <span className="replay-speed">x{playbackSpeed}</span>
                 </div>
               )}
             </div>
+
+            {loadedSession && (
+              <div className="replay-controls">
+                <div className="replay-header">
+                  <span className="replay-title">回放控制</span>
+                  <span className="replay-session-info">
+                    {formatTimestamp(loadedSession.startTime)} · {formatDuration(loadedSession.duration)}
+                  </span>
+                </div>
+
+                <div className="speed-controls">
+                  <span className="speed-label">播放速度:</span>
+                  <div className="speed-buttons">
+                    {PLAYBACK_SPEEDS.map(speed => (
+                      <button
+                        key={speed}
+                        className={`speed-btn ${playbackSpeed === speed ? 'active' : ''} ${status === 'replaying' ? 'disabled' : ''}`}
+                        onClick={() => {
+                          if (status !== 'replaying') {
+                            setPlaybackSpeed(speed)
+                            playbackSpeedRef.current = speed
+                          }
+                        }}
+                        disabled={status === 'replaying'}
+                      >
+                        {speed}x
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div 
+                  ref={timelineRef}
+                  className="timeline-container"
+                  onMouseMove={handleTimelineMouseMove}
+                >
+                  <div className="timeline-track">
+                    <div 
+                      className="timeline-range"
+                      style={{
+                        left: `${(timeRangeStart / loadedSession.duration) * 100}%`,
+                        width: `${((timeRangeEnd - timeRangeStart) / loadedSession.duration) * 100}%`,
+                      }}
+                      onMouseDown={(e) => handleTimelineMouseDown(e, 'range')}
+                    />
+                    <div 
+                      className="timeline-handle timeline-handle-left"
+                      style={{
+                        left: `${(timeRangeStart / loadedSession.duration) * 100}%`,
+                      }}
+                      onMouseDown={(e) => handleTimelineMouseDown(e, 'left')}
+                    >
+                      <div className="handle-icon">◀</div>
+                    </div>
+                    <div 
+                      className="timeline-handle timeline-handle-right"
+                      style={{
+                        left: `${(timeRangeEnd / loadedSession.duration) * 100}%`,
+                      }}
+                      onMouseDown={(e) => handleTimelineMouseDown(e, 'right')}
+                    >
+                      <div className="handle-icon">▶</div>
+                    </div>
+                  </div>
+                  <div className="timeline-labels">
+                    <span>{formatTimeShort(timeRangeStart)}</span>
+                    <span>选择范围: {formatTimeShort(timeRangeEnd - timeRangeStart)}</span>
+                    <span>{formatTimeShort(timeRangeEnd)}</span>
+                  </div>
+                </div>
+
+                <div className="replay-button-group">
+                  <button
+                    className={`control-btn replay-btn ${status === 'replaying' ? 'disabled' : ''}`}
+                    onClick={handlePlayReplay}
+                    disabled={status === 'replaying' || points.length === 0}
+                  >
+                    <span className="btn-icon">▶</span>
+                    播放选中范围
+                  </button>
+                  <button
+                    className={`control-btn stop-btn ${status !== 'replaying' ? 'disabled' : ''}`}
+                    onClick={stopReplay}
+                    disabled={status !== 'replaying'}
+                  >
+                    <span className="btn-icon">⏹</span>
+                    停止
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="controls">
               <div className="button-group">
@@ -551,9 +824,9 @@ function App() {
                 </button>
 
                 <button
-                  className={`control-btn stop-btn ${(status !== 'recording' && status !== 'paused' && status !== 'replaying') ? 'disabled' : ''}`}
-                  onClick={status === 'replaying' ? stopReplay : handleStop}
-                  disabled={status !== 'recording' && status !== 'paused' && status !== 'replaying'}
+                  className={`control-btn stop-btn ${(status !== 'recording' && status !== 'paused') ? 'disabled' : ''}`}
+                  onClick={handleStop}
+                  disabled={status !== 'recording' && status !== 'paused'}
                 >
                   <span className="btn-icon">⏹</span>
                   停止
@@ -585,7 +858,7 @@ function App() {
               </div>
             )}
 
-            {(status === 'recording' || status === 'paused' || status === 'stopped') && (
+            {(status === 'recording' || status === 'paused' || status === 'stopped') && !loadedSession && (
               <div className="session-stats">
                 <h3>当前 Session</h3>
                 <div className="stats-grid">
@@ -607,7 +880,7 @@ function App() {
               </div>
             )}
 
-            {sessionInfo && status === 'stopped' && !selectedSession && (
+            {sessionInfo && status === 'stopped' && !loadedSession && (
               <div className="session-summary">
                 <h2>本次记录总结</h2>
                 <div className="summary-stats">
@@ -646,7 +919,7 @@ function App() {
                   {sessions.map(session => (
                     <div
                       key={session.id}
-                      className={`session-item ${selectedSession?.id === session.id ? 'selected' : ''}`}
+                      className={`session-item ${loadedSession?.id === session.id ? 'selected' : ''}`}
                       onClick={() => handleLoadSession(session.id)}
                     >
                       <div className="session-info">
