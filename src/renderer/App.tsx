@@ -405,6 +405,8 @@ function App() {
 
     setTimeRangeStart(start)
     setTimeRangeEnd(end)
+    setSelectedKeyPoint(null)
+    setHoveredTimeSegment(null)
 
     const pointsInRange = getPointsInTimeRange(session, start, end)
     setPoints(pointsInRange)
@@ -674,9 +676,9 @@ function App() {
       ctx.stroke()
     }
 
-    const padding = 40
-    const availableWidth = VIEW_4D_WIDTH - padding * 2
-    const availableHeight = VIEW_4D_HEIGHT - padding * 2
+    const padding = { left: 60, right: 40, top: 50, bottom: 40 }
+    const availableWidth = VIEW_4D_WIDTH - padding.left - padding.right
+    const availableHeight = VIEW_4D_HEIGHT - padding.top - padding.bottom
 
     const startTime = points[0].timestamp
     const endTime = points[points.length - 1].timestamp
@@ -686,7 +688,6 @@ function App() {
 
     let minX = Infinity, maxX = -Infinity
     let minY = Infinity, maxY = -Infinity
-    let minZ = 0, maxZ = totalDuration
 
     for (const point of points) {
       if (point.x < minX) minX = point.x
@@ -695,57 +696,89 @@ function App() {
       if (point.y > maxY) maxY = point.y
     }
 
-    const rangeX = maxX - minX
-    const rangeY = maxY - minY
-    const rangeZ = maxZ - minZ
+    const rangeX = maxX - minX || 1
+    const rangeY = maxY - minY || 1
 
-    const project3D = (x: number, y: number, z: number): { x: number; y: number } => {
-      const normalizedX = (x - minX) / (rangeX || 1)
-      const normalizedY = (y - minY) / (rangeY || 1)
-      const normalizedZ = (z - minZ) / (rangeZ || 1)
+    const projectTo4D = (point: Point, timeProgress: number): { x: number; y: number } => {
+      const normalizedX = (point.x - minX) / rangeX
+      const normalizedY = (point.y - minY) / rangeY
 
-      const angle = Math.PI / 6
-      const cosAngle = Math.cos(angle)
-      const sinAngle = Math.sin(angle)
+      const baseX = padding.left + normalizedX * availableWidth
+      const baseY = padding.top + (1 - normalizedY) * availableHeight
 
-      const isoX = (normalizedX - normalizedY) * cosAngle
-      const isoY = (normalizedX + normalizedY) * sinAngle - normalizedZ
-
-      const screenX = padding + (isoX + 1) / 2 * availableWidth
-      const screenY = padding + (isoY + 1) / 2 * availableHeight
-
-      return { x: screenX, y: screenY }
+      const timeOffset = timeProgress * 80
+      const parallaxX = timeProgress * 30
+      
+      return {
+        x: baseX - parallaxX,
+        y: baseY - timeOffset
+      }
     }
 
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)'
     ctx.lineWidth = 1
-    const origin2D = project3D(minX, minY, minZ)
-    const xEnd2D = project3D(maxX, minY, minZ)
-    const yEnd2D = project3D(minX, maxY, minZ)
-    const zEnd2D = project3D(minX, minY, maxZ)
+    ctx.setLineDash([5, 5])
+    
+    const corners = [
+      { x: minX, y: minY, label: '起点' },
+      { x: maxX, y: minY, label: 'X最大' },
+      { x: maxX, y: maxY, label: 'Y最大' },
+      { x: minX, y: maxY, label: '' }
+    ]
 
-    ctx.beginPath()
-    ctx.moveTo(origin2D.x, origin2D.y)
-    ctx.lineTo(xEnd2D.x, xEnd2D.y)
-    ctx.stroke()
+    for (let i = 0; i < corners.length; i++) {
+      const start2D = projectTo4D(
+        { x: corners[i].x, y: corners[i].y, timestamp: startTime, speed: 0 }, 
+        0
+      )
+      const end2D = projectTo4D(
+        { x: corners[i].x, y: corners[i].y, timestamp: endTime, speed: 0 }, 
+        1
+      )
 
-    ctx.beginPath()
-    ctx.moveTo(origin2D.x, origin2D.y)
-    ctx.lineTo(yEnd2D.x, yEnd2D.y)
-    ctx.stroke()
+      ctx.beginPath()
+      ctx.moveTo(start2D.x, start2D.y)
+      ctx.lineTo(end2D.x, end2D.y)
+      ctx.stroke()
 
-    ctx.beginPath()
-    ctx.moveTo(origin2D.x, origin2D.y)
-    ctx.lineTo(zEnd2D.x, zEnd2D.y)
-    ctx.stroke()
+      if (corners[i].label) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'
+        ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif'
+        ctx.fillText(corners[i].label, start2D.x - 15, start2D.y + 15)
+      }
+    }
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'
+    ctx.setLineDash([])
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'
     ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif'
-    ctx.fillText('X', xEnd2D.x + 5, xEnd2D.y)
-    ctx.fillText('Y', yEnd2D.x - 15, yEnd2D.y - 5)
-    ctx.fillText('时间', zEnd2D.x - 15, zEnd2D.y - 5)
-
+    ctx.fillText('时间轴 (从后往前)', VIEW_4D_WIDTH / 2 - 40, 25)
+    
+    const timeStartPoint = projectTo4D({ x: (minX + maxX) / 2, y: (minY + maxY) / 2, timestamp: startTime, speed: 0 }, 0)
+    const timeEndPoint = projectTo4D({ x: (minX + maxX) / 2, y: (minY + maxY) / 2, timestamp: endTime, speed: 0 }, 1)
+    
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'
     ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(timeStartPoint.x, 35)
+    ctx.lineTo(timeEndPoint.x, 35)
+    ctx.stroke()
+    
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'
+    ctx.beginPath()
+    ctx.moveTo(timeEndPoint.x + 8, 35)
+    ctx.lineTo(timeEndPoint.x, 30)
+    ctx.lineTo(timeEndPoint.x, 40)
+    ctx.closePath()
+    ctx.fill()
+
+    ctx.fillStyle = 'rgba(100, 200, 255, 0.7)'
+    ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif'
+    ctx.fillText('开始', timeStartPoint.x - 10, 32)
+    ctx.fillStyle = 'rgba(255, 200, 100, 0.7)'
+    ctx.fillText('结束', timeEndPoint.x - 10, 32)
+
+    ctx.lineWidth = 2.5
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
 
@@ -753,11 +786,11 @@ function App() {
       const prevPoint = points[i - 1]
       const currPoint = points[i]
 
-      const prevTime = prevPoint.timestamp - startTime
-      const currTime = currPoint.timestamp - startTime
+      const prevProgress = (prevPoint.timestamp - startTime) / (totalDuration || 1)
+      const currProgress = (currPoint.timestamp - startTime) / (totalDuration || 1)
 
-      const prev2D = project3D(prevPoint.x, prevPoint.y, prevTime)
-      const curr2D = project3D(currPoint.x, currPoint.y, currTime)
+      const prev2D = projectTo4D(prevPoint, prevProgress)
+      const curr2D = projectTo4D(currPoint, currProgress)
 
       let color
       if (colorMode === 'time') {
@@ -767,56 +800,109 @@ function App() {
         color = getColorBySpeed(currPoint.speed, speedStats.min, speedStats.max)
       }
 
-      ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.8)`
+      ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.9)`
       ctx.beginPath()
       ctx.moveTo(prev2D.x, prev2D.y)
       ctx.lineTo(curr2D.x, curr2D.y)
       ctx.stroke()
     }
 
-    if (points.length > 0) {
-      const lastPoint = points[points.length - 1]
-      const lastTime = lastPoint.timestamp - startTime
-      const last2D = project3D(lastPoint.x, lastPoint.y, lastTime)
+    const sampleCount = Math.min(points.length, 20)
+    const sampleStep = Math.max(1, Math.floor(points.length / sampleCount))
+    
+    for (let i = 0; i < points.length; i += sampleStep) {
+      const point = points[i]
+      const progress = (point.timestamp - startTime) / (totalDuration || 1)
+      const point2D = projectTo4D(point, progress)
 
-      let lastColor
+      let color
       if (colorMode === 'time') {
+        color = getColorByProgress(progress)
+      } else {
+        color = getColorBySpeed(point.speed, speedStats.min, speedStats.max)
+      }
+
+      ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.6)`
+      ctx.beginPath()
+      ctx.arc(point2D.x, point2D.y, 3, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    if (points.length > 0) {
+      const firstPoint = points[0]
+      const lastPoint = points[points.length - 1]
+      
+      const first2D = projectTo4D(firstPoint, 0)
+      const last2D = projectTo4D(lastPoint, 1)
+
+      let firstColor, lastColor
+      if (colorMode === 'time') {
+        firstColor = getColorByProgress(0)
         lastColor = getColorByProgress(1)
       } else {
+        firstColor = getColorBySpeed(firstPoint.speed, speedStats.min, speedStats.max)
         lastColor = getColorBySpeed(lastPoint.speed, speedStats.min, speedStats.max)
       }
 
-      ctx.fillStyle = `rgb(${lastColor.r}, ${lastColor.g}, ${lastColor.b})`
+      ctx.fillStyle = `rgb(${firstColor.r}, ${firstColor.g}, ${firstColor.b})`
       ctx.beginPath()
-      ctx.arc(last2D.x, last2D.y, 6, 0, Math.PI * 2)
+      ctx.arc(first2D.x, first2D.y, 7, 0, Math.PI * 2)
       ctx.fill()
-
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)'
       ctx.lineWidth = 2
       ctx.stroke()
+
+      ctx.fillStyle = 'rgba(100, 200, 255, 0.9)'
+      ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif'
+      ctx.fillText('起点', first2D.x + 10, first2D.y - 8)
+
+      ctx.fillStyle = `rgb(${lastColor.r}, ${lastColor.g}, ${lastColor.b})`
+      ctx.beginPath()
+      ctx.arc(last2D.x, last2D.y, 7, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)'
+      ctx.lineWidth = 2
+      ctx.stroke()
+
+      ctx.fillStyle = 'rgba(255, 200, 100, 0.9)'
+      ctx.fillText('终点', last2D.x + 10, last2D.y - 8)
+
+      const gradient = ctx.createRadialGradient(
+        last2D.x, last2D.y, 0,
+        last2D.x, last2D.y, 25
+      )
+      gradient.addColorStop(0, `rgba(${lastColor.r}, ${lastColor.g}, ${lastColor.b}, 0.4)`)
+      gradient.addColorStop(1, `rgba(${lastColor.r}, ${lastColor.g}, ${lastColor.b}, 0)`)
+      ctx.fillStyle = gradient
+      ctx.beginPath()
+      ctx.arc(last2D.x, last2D.y, 25, 0, Math.PI * 2)
+      ctx.fill()
     }
 
     if (showKeyPoints) {
       const keyPoints = detectKeyPoints(points)
       keyPoints.forEach(kp => {
-        const kpTime = kp.timestamp - startTime
-        const kp2D = project3D(kp.x, kp.y, kpTime)
+        const kpProgress = (kp.timestamp - startTime) / (totalDuration || 1)
+        const kp2D = projectTo4D(
+          { x: kp.x, y: kp.y, timestamp: kp.timestamp, speed: points[kp.index]?.speed || 0 },
+          kpProgress
+        )
 
         let markerColor
-        let markerSize = 6
+        let markerSize = 7
 
         switch (kp.type) {
           case 'pause':
             markerColor = '#fdcb6e'
-            markerSize = 8
+            markerSize = 9
             break
           case 'turn':
             markerColor = '#6c5ce7'
-            markerSize = 6
+            markerSize = 7
             break
           case 'speed_change':
             markerColor = '#00b894'
-            markerSize = 5
+            markerSize = 6
             break
         }
 
@@ -825,12 +911,28 @@ function App() {
         ctx.arc(kp2D.x, kp2D.y, markerSize, 0, Math.PI * 2)
         ctx.fill()
 
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)'
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'
         ctx.lineWidth = 1.5
         ctx.stroke()
+
+        if (selectedKeyPoint && selectedKeyPoint.index === kp.index) {
+          ctx.strokeStyle = '#ffffff'
+          ctx.lineWidth = 3
+          ctx.beginPath()
+          ctx.arc(kp2D.x, kp2D.y, markerSize + 5, 0, Math.PI * 2)
+          ctx.stroke()
+
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.95)'
+          ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif'
+          ctx.fillText(kp.description, kp2D.x + 15, kp2D.y - 10)
+        }
       })
     }
-  }, [points, colorMode, showKeyPoints])
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'
+    ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif'
+    ctx.fillText('提示：越靠后（视觉上越远）的点时间越早，越靠前的点时间越晚', padding.left, VIEW_4D_HEIGHT - 10)
+  }, [points, colorMode, showKeyPoints, selectedKeyPoint])
 
   const drawSpeedChart = useCallback(() => {
     const canvas = speedChartCanvasRef.current
@@ -1036,6 +1138,8 @@ function App() {
     setIsDraggingLeft(false)
     setIsDraggingRight(false)
     setIsDraggingRange(false)
+    setSelectedKeyPoint(null)
+    setHoveredTimeSegment(null)
   }, [])
 
   useEffect(() => {
@@ -1286,29 +1390,56 @@ function App() {
               
               {points.length > 0 && (
                 <div className="canvas-legend">
-                  <div className="legend-item">
-                    <div className={`legend-gradient ${colorMode}-gradient`}></div>
-                    <div className="legend-labels">
-                      <span>{colorMode === 'time' ? '开始' : '慢速'}</span>
-                      <span>{colorMode === 'time' ? '结束' : '快速'}</span>
+                  <div className="legend-main">
+                    <div className="legend-color-mode">
+                      <span className="legend-mode-label">
+                        当前颜色模式: <strong>{colorMode === 'time' ? '时间' : '速度'}</strong>
+                      </span>
+                    </div>
+                    <div className="legend-gradient-container">
+                      <div className={`legend-gradient ${colorMode}-gradient`}></div>
+                      <div className="legend-gradient-labels">
+                        <span className="legend-start-label">
+                          {colorMode === 'time' ? '时间起点' : '慢速'}
+                          <span className="legend-color-preview time-start-color"></span>
+                        </span>
+                        <span className="legend-mid-label">
+                          {colorMode === 'time' ? '时间中点' : '中速'}
+                          <span className="legend-color-preview time-mid-color"></span>
+                        </span>
+                        <span className="legend-end-label">
+                          {colorMode === 'time' ? '时间终点' : '快速'}
+                          <span className="legend-color-preview time-end-color"></span>
+                        </span>
+                      </div>
                     </div>
                   </div>
                   {showKeyPoints && (
-                    <div className="legend-key-points">
-                      <div className="legend-key-item">
-                        <div className="legend-key-marker pause-marker"></div>
-                        <span>停顿点</span>
-                      </div>
-                      <div className="legend-key-item">
-                        <div className="legend-key-marker turn-marker"></div>
-                        <span>转折点</span>
-                      </div>
-                      <div className="legend-key-item">
-                        <div className="legend-key-marker speed-marker"></div>
-                        <span>速度变化</span>
+                    <div className="legend-key-section">
+                      <span className="legend-key-title">关键点标记:</span>
+                      <div className="legend-key-points">
+                        <div className="legend-key-item">
+                          <div className="legend-key-marker pause-marker"></div>
+                          <span>停顿点 (速度低)</span>
+                        </div>
+                        <div className="legend-key-item">
+                          <div className="legend-key-marker turn-marker"></div>
+                          <span>转折点 (方向变)</span>
+                        </div>
+                        <div className="legend-key-item">
+                          <div className="legend-key-marker speed-marker"></div>
+                          <span>速度变化 (快慢变)</span>
+                        </div>
                       </div>
                     </div>
                   )}
+                  <div className="legend-info">
+                    <span className="legend-info-text">
+                      {colorMode === 'time' 
+                        ? '提示：颜色从蓝→红→黄，表示时间从开始到结束' 
+                        : '提示：颜色从绿→黄→红，表示速度从慢到快'}
+                    </span>
+                  </div>
                 </div>
               )}
               
