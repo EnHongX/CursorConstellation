@@ -40,8 +40,177 @@ function getColorByProgress(progress: number): { r: number; g: number; b: number
   return color
 }
 
+function getColorBySpeed(speed: number, minSpeed: number, maxSpeed: number): { r: number; g: number; b: number } {
+  const normalizedSpeed = maxSpeed === minSpeed ? 0.5 : (speed - minSpeed) / (maxSpeed - minSpeed)
+  
+  const slowColor = { r: 0, g: 184, b: 148 }
+  const midColor = { r: 253, g: 203, b: 110 }
+  const fastColor = { r: 233, g: 69, b: 96 }
+
+  let color: { r: number; g: number; b: number }
+
+  if (normalizedSpeed < 0.5) {
+    const t = normalizedSpeed * 2
+    color = {
+      r: Math.round(slowColor.r + (midColor.r - slowColor.r) * t),
+      g: Math.round(slowColor.g + (midColor.g - slowColor.g) * t),
+      b: Math.round(slowColor.b + (midColor.b - slowColor.b) * t),
+    }
+  } else {
+    const t = (normalizedSpeed - 0.5) * 2
+    color = {
+      r: Math.round(midColor.r + (fastColor.r - midColor.r) * t),
+      g: Math.round(midColor.g + (fastColor.g - midColor.g) * t),
+      b: Math.round(midColor.b + (fastColor.b - midColor.b) * t),
+    }
+  }
+
+  return color
+}
+
+interface SpeedStats {
+  min: number
+  max: number
+  avg: number
+  median: number
+}
+
+interface KeyPoint {
+  type: 'pause' | 'turn' | 'speed_change'
+  index: number
+  timestamp: number
+  x: number
+  y: number
+  description: string
+}
+
+function calculateSpeedStats(points: Point[]): SpeedStats {
+  if (points.length === 0) {
+    return { min: 0, max: 0, avg: 0, median: 0 }
+  }
+
+  const speeds = points.map(p => p.speed)
+  const sortedSpeeds = [...speeds].sort((a, b) => a - b)
+  
+  const sum = speeds.reduce((a, b) => a + b, 0)
+  const avg = sum / speeds.length
+  
+  const medianIndex = Math.floor(sortedSpeeds.length / 2)
+  const median = sortedSpeeds.length % 2 === 0
+    ? (sortedSpeeds[medianIndex - 1] + sortedSpeeds[medianIndex]) / 2
+    : sortedSpeeds[medianIndex]
+
+  return {
+    min: sortedSpeeds[0],
+    max: sortedSpeeds[sortedSpeeds.length - 1],
+    avg,
+    median
+  }
+}
+
+function detectKeyPoints(points: Point[]): KeyPoint[] {
+  const keyPoints: KeyPoint[] = []
+  
+  if (points.length < 3) return keyPoints
+
+  const pauseSpeedThreshold = 20
+  const turnAngleThreshold = 45
+  const speedChangeThreshold = 50
+
+  for (let i = 1; i < points.length - 1; i++) {
+    const current = points[i]
+    const prev = points[i - 1]
+    const next = points[i + 1]
+
+    if (current.speed < pauseSpeedThreshold) {
+      const isPause = i > 0 && i < points.length - 1 && 
+        points[i - 1].speed < pauseSpeedThreshold && 
+        points[i + 1].speed < pauseSpeedThreshold
+      
+      if (isPause && (i === 1 || points[i - 2].speed >= pauseSpeedThreshold)) {
+        keyPoints.push({
+          type: 'pause',
+          index: i,
+          timestamp: current.timestamp,
+          x: current.x,
+          y: current.y,
+          description: '停顿点'
+        })
+      }
+    }
+
+    const angle1 = Math.atan2(current.y - prev.y, current.x - prev.x) * 180 / Math.PI
+    const angle2 = Math.atan2(next.y - current.y, next.x - current.x) * 180 / Math.PI
+    let angleDiff = Math.abs(angle2 - angle1)
+    if (angleDiff > 180) angleDiff = 360 - angleDiff
+
+    if (angleDiff > turnAngleThreshold) {
+      keyPoints.push({
+        type: 'turn',
+        index: i,
+        timestamp: current.timestamp,
+        x: current.x,
+        y: current.y,
+        description: `转折点 (${Math.round(angleDiff)}°)`
+      })
+    }
+
+    const speedDiff = Math.abs(next.speed - prev.speed)
+    if (speedDiff > speedChangeThreshold) {
+      const isAcceleration = next.speed > prev.speed
+      keyPoints.push({
+        type: 'speed_change',
+        index: i,
+        timestamp: current.timestamp,
+        x: current.x,
+        y: current.y,
+        description: isAcceleration ? '加速点' : '减速点'
+      })
+    }
+  }
+
+  return keyPoints
+}
+
+function getTimeSegments(points: Point[], segmentCount: number = 5): { start: number; end: number; points: Point[]; avgSpeed: number }[] {
+  if (points.length === 0) return []
+
+  const segments: { start: number; end: number; points: Point[]; avgSpeed: number }[] = []
+  const totalDuration = points[points.length - 1].timestamp - points[0].timestamp
+  const segmentDuration = totalDuration / segmentCount
+
+  for (let i = 0; i < segmentCount; i++) {
+    const segmentStart = points[0].timestamp + i * segmentDuration
+    const segmentEnd = points[0].timestamp + (i + 1) * segmentDuration
+    
+    const segmentPoints = points.filter(p => 
+      p.timestamp >= segmentStart && p.timestamp <= segmentEnd
+    )
+
+    const avgSpeed = segmentPoints.length > 0
+      ? segmentPoints.reduce((sum, p) => sum + p.speed, 0) / segmentPoints.length
+      : 0
+
+    segments.push({
+      start: segmentStart,
+      end: segmentEnd,
+      points: segmentPoints,
+      avgSpeed
+    })
+  }
+
+  return segments
+}
+
+const VIEW_4D_WIDTH = 800
+const VIEW_4D_HEIGHT = 300
+const SPEED_CHART_WIDTH = 260
+const SPEED_CHART_HEIGHT = 200
+
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const view4DCanvasRef = useRef<HTMLCanvasElement>(null)
+  const speedChartCanvasRef = useRef<HTMLCanvasElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const replayIntervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -71,6 +240,11 @@ function App() {
   const [isDraggingRange, setIsDraggingRange] = useState(false)
   const [dragStartX, setDragStartX] = useState(0)
   const [dragStartRange, setDragStartRange] = useState({ start: 0, end: 0 })
+  
+  const [colorMode, setColorMode] = useState<'time' | 'speed'>('time')
+  const [showKeyPoints, setShowKeyPoints] = useState(true)
+  const [selectedKeyPoint, setSelectedKeyPoint] = useState<KeyPoint | null>(null)
+  const [hoveredTimeSegment, setHoveredTimeSegment] = useState<number | null>(null)
 
   const loadSessions = useCallback(async () => {
     if (!isElectronEnv || dbUnavailable) return
@@ -363,13 +537,21 @@ function App() {
 
     if (normalizedPoints.length === 0) return
 
+    const speedStats = calculateSpeedStats(displayPoints)
+    const keyPoints = showKeyPoints ? detectKeyPoints(displayPoints) : []
+
     ctx.lineWidth = 2
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
 
     for (let i = 1; i < normalizedPoints.length; i++) {
-      const progress = i / (normalizedPoints.length - 1)
-      const color = getColorByProgress(progress)
+      let color
+      if (colorMode === 'time') {
+        const progress = i / (normalizedPoints.length - 1)
+        color = getColorByProgress(progress)
+      } else {
+        color = getColorBySpeed(normalizedPoints[i].speed, speedStats.min, speedStats.max)
+      }
       ctx.strokeStyle = `rgb(${color.r}, ${color.g}, ${color.b})`
       ctx.beginPath()
       ctx.moveTo(normalizedPoints[i - 1].x, normalizedPoints[i - 1].y)
@@ -377,13 +559,65 @@ function App() {
       ctx.stroke()
     }
 
+    if (showKeyPoints && keyPoints.length > 0) {
+      const normalizedKeyPoints = normalizePoints(keyPoints.map(kp => ({
+        x: kp.x,
+        y: kp.y,
+        timestamp: kp.timestamp,
+        speed: displayPoints[kp.index]?.speed || 0
+      })))
+
+      normalizedKeyPoints.forEach((nkp, idx) => {
+        const kp = keyPoints[idx]
+        let markerColor
+        let markerSize = 8
+
+        switch (kp.type) {
+          case 'pause':
+            markerColor = '#fdcb6e'
+            markerSize = 10
+            break
+          case 'turn':
+            markerColor = '#6c5ce7'
+            markerSize = 8
+            break
+          case 'speed_change':
+            markerColor = '#00b894'
+            markerSize = 6
+            break
+        }
+
+        ctx.fillStyle = markerColor
+        ctx.beginPath()
+        ctx.arc(nkp.x, nkp.y, markerSize, 0, Math.PI * 2)
+        ctx.fill()
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'
+        ctx.lineWidth = 2
+        ctx.stroke()
+
+        if (selectedKeyPoint && selectedKeyPoint.index === kp.index) {
+          ctx.strokeStyle = '#ffffff'
+          ctx.lineWidth = 3
+          ctx.beginPath()
+          ctx.arc(nkp.x, nkp.y, markerSize + 4, 0, Math.PI * 2)
+          ctx.stroke()
+        }
+      })
+    }
+
     const lastNPoints = Math.min(normalizedPoints.length, 100)
     const startIndex = normalizedPoints.length - lastNPoints
 
     for (let i = startIndex; i < normalizedPoints.length; i++) {
       const point = normalizedPoints[i]
-      const progress = i / (normalizedPoints.length - 1)
-      const color = getColorByProgress(progress)
+      let color
+      if (colorMode === 'time') {
+        const progress = i / (normalizedPoints.length - 1)
+        color = getColorByProgress(progress)
+      } else {
+        color = getColorBySpeed(point.speed, speedStats.min, speedStats.max)
+      }
       const alpha = 0.3 + ((i - startIndex) / lastNPoints) * 0.7
       ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`
       ctx.beginPath()
@@ -394,8 +628,13 @@ function App() {
 
     if (normalizedPoints.length > 0) {
       const lastPoint = normalizedPoints[normalizedPoints.length - 1]
-      const lastProgress = (normalizedPoints.length - 1) / Math.max(normalizedPoints.length - 1, 1)
-      const lastColor = getColorByProgress(lastProgress)
+      let lastColor
+      if (colorMode === 'time') {
+        const lastProgress = (normalizedPoints.length - 1) / Math.max(normalizedPoints.length - 1, 1)
+        lastColor = getColorByProgress(lastProgress)
+      } else {
+        lastColor = getColorBySpeed(lastPoint.speed, speedStats.min, speedStats.max)
+      }
       const gradient = ctx.createRadialGradient(
         lastPoint.x, lastPoint.y, 0,
         lastPoint.x, lastPoint.y, 20
@@ -407,7 +646,329 @@ function App() {
       ctx.arc(lastPoint.x, lastPoint.y, 20, 0, Math.PI * 2)
       ctx.fill()
     }
-  }, [points, normalizePoints])
+  }, [points, normalizePoints, colorMode, showKeyPoints, selectedKeyPoint])
+
+  const draw4DView = useCallback(() => {
+    const canvas = view4DCanvasRef.current
+    if (!canvas || points.length === 0) return
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    ctx.fillStyle = '#16213e'
+    ctx.fillRect(0, 0, VIEW_4D_WIDTH, VIEW_4D_HEIGHT)
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)'
+    ctx.lineWidth = 1
+    const gridSize = 40
+    for (let x = 0; x <= VIEW_4D_WIDTH; x += gridSize) {
+      ctx.beginPath()
+      ctx.moveTo(x, 0)
+      ctx.lineTo(x, VIEW_4D_HEIGHT)
+      ctx.stroke()
+    }
+    for (let y = 0; y <= VIEW_4D_HEIGHT; y += gridSize) {
+      ctx.beginPath()
+      ctx.moveTo(0, y)
+      ctx.lineTo(VIEW_4D_WIDTH, y)
+      ctx.stroke()
+    }
+
+    const padding = 40
+    const availableWidth = VIEW_4D_WIDTH - padding * 2
+    const availableHeight = VIEW_4D_HEIGHT - padding * 2
+
+    const startTime = points[0].timestamp
+    const endTime = points[points.length - 1].timestamp
+    const totalDuration = endTime - startTime
+
+    const speedStats = calculateSpeedStats(points)
+
+    let minX = Infinity, maxX = -Infinity
+    let minY = Infinity, maxY = -Infinity
+    let minZ = 0, maxZ = totalDuration
+
+    for (const point of points) {
+      if (point.x < minX) minX = point.x
+      if (point.x > maxX) maxX = point.x
+      if (point.y < minY) minY = point.y
+      if (point.y > maxY) maxY = point.y
+    }
+
+    const rangeX = maxX - minX
+    const rangeY = maxY - minY
+    const rangeZ = maxZ - minZ
+
+    const project3D = (x: number, y: number, z: number): { x: number; y: number } => {
+      const normalizedX = (x - minX) / (rangeX || 1)
+      const normalizedY = (y - minY) / (rangeY || 1)
+      const normalizedZ = (z - minZ) / (rangeZ || 1)
+
+      const angle = Math.PI / 6
+      const cosAngle = Math.cos(angle)
+      const sinAngle = Math.sin(angle)
+
+      const isoX = (normalizedX - normalizedY) * cosAngle
+      const isoY = (normalizedX + normalizedY) * sinAngle - normalizedZ
+
+      const screenX = padding + (isoX + 1) / 2 * availableWidth
+      const screenY = padding + (isoY + 1) / 2 * availableHeight
+
+      return { x: screenX, y: screenY }
+    }
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'
+    ctx.lineWidth = 1
+    const origin2D = project3D(minX, minY, minZ)
+    const xEnd2D = project3D(maxX, minY, minZ)
+    const yEnd2D = project3D(minX, maxY, minZ)
+    const zEnd2D = project3D(minX, minY, maxZ)
+
+    ctx.beginPath()
+    ctx.moveTo(origin2D.x, origin2D.y)
+    ctx.lineTo(xEnd2D.x, xEnd2D.y)
+    ctx.stroke()
+
+    ctx.beginPath()
+    ctx.moveTo(origin2D.x, origin2D.y)
+    ctx.lineTo(yEnd2D.x, yEnd2D.y)
+    ctx.stroke()
+
+    ctx.beginPath()
+    ctx.moveTo(origin2D.x, origin2D.y)
+    ctx.lineTo(zEnd2D.x, zEnd2D.y)
+    ctx.stroke()
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'
+    ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif'
+    ctx.fillText('X', xEnd2D.x + 5, xEnd2D.y)
+    ctx.fillText('Y', yEnd2D.x - 15, yEnd2D.y - 5)
+    ctx.fillText('时间', zEnd2D.x - 15, zEnd2D.y - 5)
+
+    ctx.lineWidth = 2
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+
+    for (let i = 1; i < points.length; i++) {
+      const prevPoint = points[i - 1]
+      const currPoint = points[i]
+
+      const prevTime = prevPoint.timestamp - startTime
+      const currTime = currPoint.timestamp - startTime
+
+      const prev2D = project3D(prevPoint.x, prevPoint.y, prevTime)
+      const curr2D = project3D(currPoint.x, currPoint.y, currTime)
+
+      let color
+      if (colorMode === 'time') {
+        const progress = i / (points.length - 1)
+        color = getColorByProgress(progress)
+      } else {
+        color = getColorBySpeed(currPoint.speed, speedStats.min, speedStats.max)
+      }
+
+      ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, 0.8)`
+      ctx.beginPath()
+      ctx.moveTo(prev2D.x, prev2D.y)
+      ctx.lineTo(curr2D.x, curr2D.y)
+      ctx.stroke()
+    }
+
+    if (points.length > 0) {
+      const lastPoint = points[points.length - 1]
+      const lastTime = lastPoint.timestamp - startTime
+      const last2D = project3D(lastPoint.x, lastPoint.y, lastTime)
+
+      let lastColor
+      if (colorMode === 'time') {
+        lastColor = getColorByProgress(1)
+      } else {
+        lastColor = getColorBySpeed(lastPoint.speed, speedStats.min, speedStats.max)
+      }
+
+      ctx.fillStyle = `rgb(${lastColor.r}, ${lastColor.g}, ${lastColor.b})`
+      ctx.beginPath()
+      ctx.arc(last2D.x, last2D.y, 6, 0, Math.PI * 2)
+      ctx.fill()
+
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'
+      ctx.lineWidth = 2
+      ctx.stroke()
+    }
+
+    if (showKeyPoints) {
+      const keyPoints = detectKeyPoints(points)
+      keyPoints.forEach(kp => {
+        const kpTime = kp.timestamp - startTime
+        const kp2D = project3D(kp.x, kp.y, kpTime)
+
+        let markerColor
+        let markerSize = 6
+
+        switch (kp.type) {
+          case 'pause':
+            markerColor = '#fdcb6e'
+            markerSize = 8
+            break
+          case 'turn':
+            markerColor = '#6c5ce7'
+            markerSize = 6
+            break
+          case 'speed_change':
+            markerColor = '#00b894'
+            markerSize = 5
+            break
+        }
+
+        ctx.fillStyle = markerColor
+        ctx.beginPath()
+        ctx.arc(kp2D.x, kp2D.y, markerSize, 0, Math.PI * 2)
+        ctx.fill()
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)'
+        ctx.lineWidth = 1.5
+        ctx.stroke()
+      })
+    }
+  }, [points, colorMode, showKeyPoints])
+
+  const drawSpeedChart = useCallback(() => {
+    const canvas = speedChartCanvasRef.current
+    if (!canvas || points.length === 0) return
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    ctx.fillStyle = '#16213e'
+    ctx.fillRect(0, 0, SPEED_CHART_WIDTH, SPEED_CHART_HEIGHT)
+
+    const padding = { top: 20, right: 10, bottom: 30, left: 40 }
+    const chartWidth = SPEED_CHART_WIDTH - padding.left - padding.right
+    const chartHeight = SPEED_CHART_HEIGHT - padding.top - padding.bottom
+
+    const speedStats = calculateSpeedStats(points)
+    const maxSpeed = Math.max(speedStats.max, 1)
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'
+    ctx.lineWidth = 1
+    for (let i = 0; i <= 5; i++) {
+      const y = padding.top + (i / 5) * chartHeight
+      ctx.beginPath()
+      ctx.moveTo(padding.left, y)
+      ctx.lineTo(padding.left + chartWidth, y)
+      ctx.stroke()
+    }
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'
+    ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif'
+    ctx.textAlign = 'right'
+    for (let i = 0; i <= 5; i++) {
+      const y = padding.top + (i / 5) * chartHeight
+      const speed = maxSpeed - (i / 5) * maxSpeed
+      ctx.fillText(`${Math.round(speed)}`, padding.left - 5, y + 4)
+    }
+    ctx.fillText('速度', padding.left - 5, padding.top - 5)
+
+    ctx.textAlign = 'center'
+    const timeSegments = 5
+    for (let i = 0; i <= timeSegments; i++) {
+      const x = padding.left + (i / timeSegments) * chartWidth
+      const progress = i / timeSegments
+      const timeMs = progress * (points[points.length - 1].timestamp - points[0].timestamp)
+      ctx.fillText(`${(timeMs / 1000).toFixed(0)}s`, x, padding.top + chartHeight + 15)
+    }
+
+    ctx.beginPath()
+    ctx.moveTo(padding.left, padding.top + chartHeight)
+
+    for (let i = 0; i < points.length; i++) {
+      const x = padding.left + (i / (points.length - 1)) * chartWidth
+      const y = padding.top + chartHeight - (points[i].speed / maxSpeed) * chartHeight
+      
+      if (i === 0) {
+        ctx.moveTo(x, y)
+      } else {
+        ctx.lineTo(x, y)
+      }
+    }
+
+    ctx.lineTo(padding.left + chartWidth, padding.top + chartHeight)
+    ctx.closePath()
+
+    const gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartHeight)
+    gradient.addColorStop(0, 'rgba(233, 69, 96, 0.4)')
+    gradient.addColorStop(0.5, 'rgba(253, 203, 110, 0.3)')
+    gradient.addColorStop(1, 'rgba(0, 184, 148, 0.2)')
+    ctx.fillStyle = gradient
+    ctx.fill()
+
+    ctx.beginPath()
+    for (let i = 0; i < points.length; i++) {
+      const x = padding.left + (i / (points.length - 1)) * chartWidth
+      const y = padding.top + chartHeight - (points[i].speed / maxSpeed) * chartHeight
+      
+      if (i === 0) {
+        ctx.moveTo(x, y)
+      } else {
+        ctx.lineTo(x, y)
+      }
+    }
+
+    ctx.strokeStyle = '#e94560'
+    ctx.lineWidth = 2
+    ctx.stroke()
+
+    if (showKeyPoints) {
+      const keyPoints = detectKeyPoints(points)
+      keyPoints.forEach(kp => {
+        const x = padding.left + (kp.index / (points.length - 1)) * chartWidth
+        const y = padding.top + chartHeight - (points[kp.index]?.speed || 0) / maxSpeed * chartHeight
+
+        let markerColor
+        let markerSize = 4
+
+        switch (kp.type) {
+          case 'pause':
+            markerColor = '#fdcb6e'
+            markerSize = 5
+            break
+          case 'turn':
+            markerColor = '#6c5ce7'
+            markerSize = 4
+            break
+          case 'speed_change':
+            markerColor = '#00b894'
+            markerSize = 3
+            break
+        }
+
+        ctx.fillStyle = markerColor
+        ctx.beginPath()
+        ctx.arc(x, y, markerSize, 0, Math.PI * 2)
+        ctx.fill()
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'
+        ctx.lineWidth = 1
+        ctx.stroke()
+      })
+    }
+
+    if (speedStats.avg > 0) {
+      const avgY = padding.top + chartHeight - (speedStats.avg / maxSpeed) * chartHeight
+      ctx.strokeStyle = 'rgba(108, 92, 231, 0.6)'
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([5, 5])
+      ctx.beginPath()
+      ctx.moveTo(padding.left, avgY)
+      ctx.lineTo(padding.left + chartWidth, avgY)
+      ctx.stroke()
+      ctx.setLineDash([])
+
+      ctx.fillStyle = 'rgba(108, 92, 231, 0.9)'
+      ctx.textAlign = 'left'
+      ctx.fillText(`平均: ${speedStats.avg.toFixed(1)}`, padding.left + 5, avgY - 5)
+    }
+  }, [points, showKeyPoints])
 
   const getTimelinePosition = useCallback((clientX: number): number => {
     if (!timelineRef.current) return 0
@@ -564,7 +1125,9 @@ function App() {
 
   useEffect(() => {
     drawCanvas()
-  }, [drawCanvas])
+    draw4DView()
+    drawSpeedChart()
+  }, [drawCanvas, draw4DView, drawSpeedChart])
 
   useEffect(() => {
     return () => {
@@ -685,12 +1248,70 @@ function App() {
         <div className="main-content">
           <div className="left-panel">
             <div className="canvas-container">
+              <div className="canvas-controls">
+                <div className="color-mode-toggle">
+                  <span className="control-label">颜色模式:</span>
+                  <button
+                    className={`color-mode-btn ${colorMode === 'time' ? 'active' : ''}`}
+                    onClick={() => setColorMode('time')}
+                  >
+                    按时间
+                  </button>
+                  <button
+                    className={`color-mode-btn ${colorMode === 'speed' ? 'active' : ''}`}
+                    onClick={() => setColorMode('speed')}
+                  >
+                    按速度
+                  </button>
+                </div>
+                <div className="key-points-toggle">
+                  <label className="toggle-label">
+                    <input
+                      type="checkbox"
+                      checked={showKeyPoints}
+                      onChange={(e) => setShowKeyPoints(e.target.checked)}
+                      className="toggle-checkbox"
+                    />
+                    显示关键点
+                  </label>
+                </div>
+              </div>
+              
               <canvas
                 ref={canvasRef}
                 width={CANVAS_WIDTH}
                 height={CANVAS_HEIGHT}
                 className="track-canvas"
               />
+              
+              {points.length > 0 && (
+                <div className="canvas-legend">
+                  <div className="legend-item">
+                    <div className={`legend-gradient ${colorMode}-gradient`}></div>
+                    <div className="legend-labels">
+                      <span>{colorMode === 'time' ? '开始' : '慢速'}</span>
+                      <span>{colorMode === 'time' ? '结束' : '快速'}</span>
+                    </div>
+                  </div>
+                  {showKeyPoints && (
+                    <div className="legend-key-points">
+                      <div className="legend-key-item">
+                        <div className="legend-key-marker pause-marker"></div>
+                        <span>停顿点</span>
+                      </div>
+                      <div className="legend-key-item">
+                        <div className="legend-key-marker turn-marker"></div>
+                        <span>转折点</span>
+                      </div>
+                      <div className="legend-key-item">
+                        <div className="legend-key-marker speed-marker"></div>
+                        <span>速度变化</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              
               {status === 'idle' && points.length === 0 && !loadedSession && (
                 <div className="canvas-overlay">
                   <p>点击「开始」按钮开始记录鼠标轨迹</p>
@@ -704,6 +1325,21 @@ function App() {
                 </div>
               )}
             </div>
+
+            {points.length > 0 && (
+              <div className="view-4d-container">
+                <div className="view-4d-header">
+                  <span className="view-4d-title">4D 轨迹视图 (X/Y/时间)</span>
+                  <span className="view-4d-hint">等距投影展示轨迹随时间的变化</span>
+                </div>
+                <canvas
+                  ref={view4DCanvasRef}
+                  width={VIEW_4D_WIDTH}
+                  height={VIEW_4D_HEIGHT}
+                  className="view-4d-canvas"
+                />
+              </div>
+            )}
 
             {loadedSession && (
               <div className="replay-controls">
@@ -904,6 +1540,135 @@ function App() {
           </div>
 
           <div className="right-panel">
+            {points.length > 0 && (
+              <>
+                <div className="analysis-section">
+                  <h3>速度变化曲线</h3>
+                  <canvas
+                    ref={speedChartCanvasRef}
+                    width={SPEED_CHART_WIDTH}
+                    height={SPEED_CHART_HEIGHT}
+                    className="speed-chart-canvas"
+                  />
+                </div>
+
+                <div className="analysis-section">
+                  <h3>轨迹分析</h3>
+                  {(() => {
+                    const speedStats = calculateSpeedStats(points)
+                    const keyPoints = detectKeyPoints(points)
+                    const timeSegments = getTimeSegments(points, 5)
+                    
+                    const pausePoints = keyPoints.filter(kp => kp.type === 'pause')
+                    const turnPoints = keyPoints.filter(kp => kp.type === 'turn')
+                    const speedChangePoints = keyPoints.filter(kp => kp.type === 'speed_change')
+
+                    return (
+                      <div className="analysis-content">
+                        <div className="stats-summary">
+                          <div className="stat-card">
+                            <span className="stat-card-label">平均速度</span>
+                            <span className="stat-card-value">{speedStats.avg.toFixed(1)}</span>
+                          </div>
+                          <div className="stat-card">
+                            <span className="stat-card-label">最高速度</span>
+                            <span className="stat-card-value">{speedStats.max.toFixed(1)}</span>
+                          </div>
+                          <div className="stat-card">
+                            <span className="stat-card-label">最低速度</span>
+                            <span className="stat-card-value">{speedStats.min.toFixed(1)}</span>
+                          </div>
+                        </div>
+
+                        <div className="key-points-summary">
+                          <div className="key-point-item">
+                            <div className="key-point-icon pause-icon"></div>
+                            <span className="key-point-count">{pausePoints.length}</span>
+                            <span className="key-point-label">停顿点</span>
+                          </div>
+                          <div className="key-point-item">
+                            <div className="key-point-icon turn-icon"></div>
+                            <span className="key-point-count">{turnPoints.length}</span>
+                            <span className="key-point-label">转折点</span>
+                          </div>
+                          <div className="key-point-item">
+                            <div className="key-point-icon speed-icon"></div>
+                            <span className="key-point-count">{speedChangePoints.length}</span>
+                            <span className="key-point-label">速度变化</span>
+                          </div>
+                        </div>
+
+                        {timeSegments.length > 0 && (
+                          <div className="time-segments">
+                            <h4>时间分段分析</h4>
+                            <div className="segments-list">
+                              {timeSegments.map((segment, idx) => (
+                                <div 
+                                  key={idx}
+                                  className={`segment-item ${hoveredTimeSegment === idx ? 'hovered' : ''}`}
+                                  onMouseEnter={() => setHoveredTimeSegment(idx)}
+                                  onMouseLeave={() => setHoveredTimeSegment(null)}
+                                >
+                                  <div className="segment-info">
+                                    <span className="segment-index">第 {idx + 1} 段</span>
+                                    <span className="segment-duration">
+                                      {((segment.end - segment.start) / 1000).toFixed(1)}s
+                                    </span>
+                                  </div>
+                                  <div className="segment-speed-bar">
+                                    <div 
+                                      className="segment-speed-fill"
+                                      style={{
+                                        width: `${Math.min((segment.avgSpeed / (speedStats.max || 1)) * 100, 100)}%`,
+                                        background: segment.avgSpeed > speedStats.avg 
+                                          ? 'linear-gradient(90deg, #e94560, #ff6b6b)'
+                                          : 'linear-gradient(90deg, #00b894, #00cec9)'
+                                      }}
+                                    ></div>
+                                  </div>
+                                  <span className="segment-avg-speed">
+                                    {segment.avgSpeed.toFixed(1)} 平均
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {keyPoints.length > 0 && (
+                          <div className="key-points-list">
+                            <h4>关键点位</h4>
+                            <div className="points-list">
+                              {keyPoints.slice(0, 10).map((kp, idx) => (
+                                <div 
+                                  key={idx}
+                                  className={`point-list-item ${selectedKeyPoint?.index === kp.index ? 'selected' : ''}`}
+                                  onClick={() => setSelectedKeyPoint(kp)}
+                                >
+                                  <div className={`point-marker ${kp.type}-marker`}></div>
+                                  <div className="point-details">
+                                    <span className="point-type">{kp.description}</span>
+                                    <span className="point-time">
+                                      {((kp.timestamp - (points[0]?.timestamp || 0)) / 1000).toFixed(2)}s
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                              {keyPoints.length > 10 && (
+                                <div className="more-points-hint">
+                                  ... 还有 {keyPoints.length - 10} 个关键点
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
+                </div>
+              </>
+            )}
+
             <div className="history-section">
               <h3>历史记录</h3>
               {dbUnavailable ? (
