@@ -38,6 +38,9 @@ export interface SessionInfo {
   duration: number;
   startTime: number;
   endTime: number;
+  pollInterval: number;
+  name: string;
+  note: string;
 }
 
 export interface Session extends SessionInfo {

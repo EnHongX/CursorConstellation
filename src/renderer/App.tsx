@@ -63,6 +63,24 @@ function App() {
   const [showKeyPoints, setShowKeyPoints] = useState(true)
   const [selectedKeyPoint, setSelectedKeyPoint] = useState<KeyPoint | null>(null)
   const [hoveredTimeSegment, setHoveredTimeSegment] = useState<number | null>(null)
+  const [pollInterval, setPollInterval] = useState<number>(50)
+  const [pollIntervalOptions, setPollIntervalOptions] = useState<number[]>([20, 50, 100, 200])
+  const [searchTerm, setSearchTerm] = useState<string>('')
+  const [timeFilter, setTimeFilter] = useState<'all' | 'today' | 'last7days' | 'custom'>('all')
+  const [customDateStart, setCustomDateStart] = useState<string>('')
+  const [customDateEnd, setCustomDateEnd] = useState<string>('')
+
+  const getStartOfDay = (date: Date): number => {
+    const start = new Date(date)
+    start.setHours(0, 0, 0, 0)
+    return start.getTime()
+  }
+
+  const getEndOfDay = (date: Date): number => {
+    const end = new Date(date)
+    end.setHours(23, 59, 59, 999)
+    return end.getTime()
+  }
 
   const loadSessions = useCallback(async () => {
     if (!isElectronEnv || dbUnavailable) {
@@ -70,7 +88,43 @@ function App() {
     }
 
     try {
-      const result = await window.electronAPI.getSessions()
+      let result
+
+      if (searchTerm.trim()) {
+        result = await window.electronAPI.searchSessions(searchTerm.trim())
+      } else if (timeFilter !== 'all') {
+        let startTime: number
+        let endTime: number
+
+        if (timeFilter === 'today') {
+          const today = new Date()
+          startTime = getStartOfDay(today)
+          endTime = getEndOfDay(today)
+        } else if (timeFilter === 'last7days') {
+          const today = new Date()
+          const sevenDaysAgo = new Date(today)
+          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+          startTime = getStartOfDay(sevenDaysAgo)
+          endTime = getEndOfDay(today)
+        } else if (timeFilter === 'custom' && customDateStart && customDateEnd) {
+          startTime = new Date(customDateStart).getTime()
+          endTime = getEndOfDay(new Date(customDateEnd))
+        } else {
+          result = await window.electronAPI.getSessions()
+          if (isDbError(result)) {
+            console.error('Failed to load sessions:', result.error)
+            setDbUnavailable(true)
+            return
+          }
+          setSessions(result.data)
+          return
+        }
+
+        result = await window.electronAPI.getSessionsByTimeRange(startTime, endTime)
+      } else {
+        result = await window.electronAPI.getSessions()
+      }
+
       if (isDbError(result)) {
         console.error('Failed to load sessions:', result.error)
         setDbUnavailable(true)
@@ -81,7 +135,53 @@ function App() {
     } catch (error) {
       console.error('Failed to load sessions:', error)
     }
-  }, [dbUnavailable, isElectronEnv])
+  }, [dbUnavailable, isElectronEnv, searchTerm, timeFilter, customDateStart, customDateEnd, getStartOfDay, getEndOfDay])
+
+  const handleSearchChange = useCallback((term: string) => {
+    setSearchTerm(term)
+  }, [])
+
+  const handleTimeFilterChange = useCallback((filter: 'all' | 'today' | 'last7days' | 'custom') => {
+    setTimeFilter(filter)
+  }, [])
+
+  const handleUpdateSessionName = useCallback(async (sessionId: string, name: string) => {
+    if (!isElectronEnv) {
+      return
+    }
+
+    try {
+      const result = await window.electronAPI.updateSessionName(sessionId, name)
+      if (!isDbError(result) && result.data) {
+        await loadSessions()
+      }
+    } catch (error) {
+      console.error('Failed to update session name:', error)
+    }
+  }, [isElectronEnv, loadSessions])
+
+  const handleUpdateSessionNote = useCallback(async (sessionId: string, note: string) => {
+    if (!isElectronEnv) {
+      return
+    }
+
+    try {
+      const result = await window.electronAPI.updateSessionNote(sessionId, note)
+      if (!isDbError(result) && result.data) {
+        await loadSessions()
+      }
+    } catch (error) {
+      console.error('Failed to update session note:', error)
+    }
+  }, [isElectronEnv, loadSessions])
+
+  const handleCustomDateStartChange = useCallback((date: string) => {
+    setCustomDateStart(date)
+  }, [])
+
+  const handleCustomDateEndChange = useCallback((date: string) => {
+    setCustomDateEnd(date)
+  }, [])
 
   const checkPermission = useCallback(async () => {
     if (!isElectronEnv) {
@@ -530,6 +630,37 @@ function App() {
     }
   }, [isElectronEnv, loadSessions, stopDurationTimer])
 
+  const loadPollInterval = useCallback(async () => {
+    if (!isElectronEnv) {
+      return
+    }
+
+    try {
+      const result = await window.electronAPI.getPollInterval()
+      if (result.success && result.interval !== undefined && result.options) {
+        setPollInterval(result.interval)
+        setPollIntervalOptions(result.options)
+      }
+    } catch (error) {
+      console.error('Failed to load poll interval:', error)
+    }
+  }, [isElectronEnv])
+
+  const handlePollIntervalChange = useCallback(async (interval: number) => {
+    if (!isElectronEnv) {
+      return
+    }
+
+    try {
+      const result = await window.electronAPI.setPollInterval(interval)
+      if (result.success && result.interval !== undefined) {
+        setPollInterval(result.interval)
+      }
+    } catch (error) {
+      console.error('Failed to set poll interval:', error)
+    }
+  }, [isElectronEnv])
+
   useEffect(() => {
     if (!isElectronEnv) {
       return
@@ -537,7 +668,8 @@ function App() {
 
     checkPermission()
     loadSessions()
-  }, [checkPermission, isElectronEnv, loadSessions])
+    loadPollInterval()
+  }, [checkPermission, isElectronEnv, loadSessions, loadPollInterval])
 
   useEffect(() => () => {
     stopDurationTimer()
@@ -704,6 +836,22 @@ function App() {
                   <span className="point-count">已记录 {points.length} 个点</span>
                 )}
               </div>
+
+              <div className="poll-interval-control">
+                <span className="poll-interval-label">采样频率:</span>
+                <div className="poll-interval-buttons">
+                  {pollIntervalOptions.map((interval) => (
+                    <button
+                      key={interval}
+                      className={`poll-interval-btn ${pollInterval === interval ? 'active' : ''}`}
+                      onClick={() => handlePollIntervalChange(interval)}
+                      disabled={status === 'recording' || status === 'paused'}
+                    >
+                      {interval}ms
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {showPermissionWarning && permissionStatus && (
@@ -776,8 +924,18 @@ function App() {
               dbUnavailable={dbUnavailable}
               loadedSessionId={loadedSession?.id || null}
               sessions={sessions}
+              searchTerm={searchTerm}
+              timeFilter={timeFilter}
+              customDateStart={customDateStart}
+              customDateEnd={customDateEnd}
               onDeleteSession={handleDeleteSession}
               onLoadSession={handleLoadSession}
+              onSearchChange={handleSearchChange}
+              onTimeFilterChange={handleTimeFilterChange}
+              onCustomDateStartChange={handleCustomDateStartChange}
+              onCustomDateEndChange={handleCustomDateEndChange}
+              onUpdateSessionName={handleUpdateSessionName}
+              onUpdateSessionNote={handleUpdateSessionNote}
             />
           </div>
         </div>

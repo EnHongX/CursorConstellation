@@ -1,4 +1,4 @@
-import React, { forwardRef, useCallback, useEffect, useRef } from 'react'
+import React, { forwardRef, useCallback, useEffect, useRef, useState } from 'react'
 import { ColorMode, KeyPoint, Point, RecordingStatus, Session } from '../types'
 import {
   calculateSpeedStats,
@@ -43,6 +43,7 @@ export const TrackCanvasPanel = forwardRef<HTMLCanvasElement, TrackCanvasPanelPr
   ref
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const [devicePixelRatio, setDevicePixelRatio] = useState<number>(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1)
 
   const setCanvasRef = useCallback((canvas: HTMLCanvasElement | null) => {
     canvasRef.current = canvas
@@ -56,6 +57,22 @@ export const TrackCanvasPanel = forwardRef<HTMLCanvasElement, TrackCanvasPanelPr
       ref.current = canvasToForward
     }
   }, [ref, points.length])
+
+  useEffect(() => {
+    const updatePixelRatio = () => {
+      setDevicePixelRatio(window.devicePixelRatio || 1)
+    }
+
+    const mediaQueryList = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+    mediaQueryList.addEventListener('change', updatePixelRatio)
+
+    return () => {
+      mediaQueryList.removeEventListener('change', updatePixelRatio)
+    }
+  }, [])
+
+  const physicalWidth = CANVAS_WIDTH * devicePixelRatio
+  const physicalHeight = CANVAS_HEIGHT * devicePixelRatio
 
   const normalizePoints = useCallback((inputPoints: Point[]): Point[] => {
     if (inputPoints.length === 0) {
@@ -107,6 +124,9 @@ export const TrackCanvasPanel = forwardRef<HTMLCanvasElement, TrackCanvasPanelPr
       return
     }
 
+    context.save()
+    context.scale(devicePixelRatio, devicePixelRatio)
+
     context.fillStyle = '#16213e'
     context.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT)
 
@@ -130,6 +150,7 @@ export const TrackCanvasPanel = forwardRef<HTMLCanvasElement, TrackCanvasPanelPr
     const normalizedPoints = normalizePoints(displayPoints)
 
     if (normalizedPoints.length === 0) {
+      context.restore()
       return
     }
 
@@ -229,7 +250,9 @@ export const TrackCanvasPanel = forwardRef<HTMLCanvasElement, TrackCanvasPanelPr
     context.beginPath()
     context.arc(lastPoint.x, lastPoint.y, 20, 0, Math.PI * 2)
     context.fill()
-  }, [colorMode, normalizePoints, points, selectedKeyPoint, showKeyPoints])
+
+    context.restore()
+  }, [colorMode, normalizePoints, points, selectedKeyPoint, showKeyPoints, devicePixelRatio])
 
   useEffect(() => {
     drawCanvas()
@@ -268,8 +291,8 @@ export const TrackCanvasPanel = forwardRef<HTMLCanvasElement, TrackCanvasPanelPr
 
       <canvas
         ref={setCanvasRef}
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
+        width={physicalWidth}
+        height={physicalHeight}
         className="track-canvas"
       />
 
