@@ -70,17 +70,17 @@ function App() {
   const [customDateStart, setCustomDateStart] = useState<string>('')
   const [customDateEnd, setCustomDateEnd] = useState<string>('')
 
-  const getStartOfDay = (date: Date): number => {
+  const getStartOfDay = useCallback((date: Date): number => {
     const start = new Date(date)
     start.setHours(0, 0, 0, 0)
     return start.getTime()
-  }
+  }, [])
 
-  const getEndOfDay = (date: Date): number => {
+  const getEndOfDay = useCallback((date: Date): number => {
     const end = new Date(date)
     end.setHours(23, 59, 59, 999)
     return end.getTime()
-  }
+  }, [])
 
   const loadSessions = useCallback(async () => {
     if (!isElectronEnv || dbUnavailable) {
@@ -141,8 +141,21 @@ function App() {
     setSearchTerm(term)
   }, [])
 
+  const formatDateForInput = (date: Date): string => {
+    return date.toISOString().split('T')[0]
+  }
+
   const handleTimeFilterChange = useCallback((filter: 'all' | 'today' | 'last7days' | 'custom') => {
     setTimeFilter(filter)
+
+    if (filter === 'custom') {
+      const today = new Date()
+      const sevenDaysAgo = new Date(today)
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+
+      setCustomDateStart((prev) => prev || formatDateForInput(sevenDaysAgo))
+      setCustomDateEnd((prev) => prev || formatDateForInput(today))
+    }
   }, [])
 
   const handleUpdateSessionName = useCallback(async (sessionId: string, name: string) => {
