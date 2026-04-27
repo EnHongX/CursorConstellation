@@ -288,6 +288,55 @@
   border-left: 1px solid rgba(255, 255, 255, 0.2);
 }
 
+.poll-interval-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.poll-interval-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.poll-interval-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.poll-interval-btn {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.poll-interval-btn:hover:not(:disabled):not(.active) {
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.poll-interval-btn.active {
+  background: linear-gradient(135deg, #6c5ce7, #a29bfe);
+  color: white;
+  box-shadow: 0 2px 8px rgba(108, 92, 231, 0.4);
+}
+
+.poll-interval-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .permission-warning {
   display: flex;
   align-items: center;

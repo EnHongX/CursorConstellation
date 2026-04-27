@@ -15,7 +15,9 @@ let currentSession: {
   totalPausedDuration: number
 } | null = null
 
-const POLL_INTERVAL = 50
+const DEFAULT_POLL_INTERVAL = 50
+const POLL_INTERVAL_OPTIONS = [20, 50, 100, 200]
+let currentPollInterval = DEFAULT_POLL_INTERVAL
 let dbError: Error | null = null
 
 interface DbErrorResponse {
@@ -66,9 +68,25 @@ function initDatabase(): boolean {
         end_time INTEGER NOT NULL,
         duration INTEGER NOT NULL,
         point_count INTEGER NOT NULL,
+        poll_interval INTEGER NOT NULL DEFAULT 50,
+        name TEXT NOT NULL DEFAULT '',
+        note TEXT NOT NULL DEFAULT '',
         created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000)
       )
     `)
+    
+    const tableInfo = db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>
+    const columns = tableInfo.map((col) => col.name)
+    
+    if (!columns.includes('poll_interval')) {
+      db.exec('ALTER TABLE sessions ADD COLUMN poll_interval INTEGER NOT NULL DEFAULT 50')
+    }
+    if (!columns.includes('name')) {
+      db.exec('ALTER TABLE sessions ADD COLUMN name TEXT NOT NULL DEFAULT \'\'')
+    }
+    if (!columns.includes('note')) {
+      db.exec('ALTER TABLE sessions ADD COLUMN note TEXT NOT NULL DEFAULT \'\'')
+    }
     
     db.exec(`
       CREATE TABLE IF NOT EXISTS points (
@@ -205,7 +223,7 @@ function startMouseTracking() {
     } catch (error) {
       console.error('[Mouse Tracking] Error:', error)
     }
-  }, POLL_INTERVAL)
+  }, currentPollInterval)
 }
 
 function stopMouseTracking() {
@@ -235,13 +253,14 @@ function saveSession(session: typeof currentSession): DbResponse<Session | null>
     const now = Date.now()
     const duration = now - session.startTime - session.totalPausedDuration
     const sessionId = session.id
+    const defaultName = `记录 ${new Date(session.startTime).toLocaleString('zh-CN')}`
     
     const insertSession = db!.prepare(`
-      INSERT INTO sessions (id, start_time, end_time, duration, point_count)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, start_time, end_time, duration, point_count, poll_interval, name)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `)
     
-    insertSession.run(sessionId, session.startTime, now, duration, session.points.length)
+    insertSession.run(sessionId, session.startTime, now, duration, session.points.length, currentPollInterval, defaultName)
     
     const insertPoint = db!.prepare(`
       INSERT INTO points (session_id, x, y, timestamp, speed)
@@ -264,6 +283,9 @@ function saveSession(session: typeof currentSession): DbResponse<Session | null>
         endTime: now,
         duration: duration,
         pointCount: session.points.length,
+        pollInterval: currentPollInterval,
+        name: defaultName,
+        note: '',
         points: session.points
       }
     }
@@ -279,7 +301,7 @@ function getSessions(): DbResponse<SessionInfo[]> {
   
   try {
     const rows = db!.prepare(`
-      SELECT id, start_time as startTime, end_time as endTime, duration, point_count as pointCount
+      SELECT id, start_time as startTime, end_time as endTime, duration, point_count as pointCount, poll_interval as pollInterval, name, note
       FROM sessions
       ORDER BY created_at DESC
     `).all() as SessionInfo[]
@@ -293,6 +315,88 @@ function getSessions(): DbResponse<SessionInfo[]> {
   }
 }
 
+function searchSessions(searchTerm: string): DbResponse<SessionInfo[]> {
+  if (!isDbReady()) {
+    return createDbErrorResponse(dbError || '数据库未初始化')
+  }
+  
+  try {
+    const rows = db!.prepare(`
+      SELECT id, start_time as startTime, end_time as endTime, duration, point_count as pointCount, poll_interval as pollInterval, name, note
+      FROM sessions
+      WHERE name LIKE ? OR note LIKE ?
+      ORDER BY created_at DESC
+    `).all(`%${searchTerm}%`, `%${searchTerm}%`) as SessionInfo[]
+    
+    return {
+      success: true,
+      data: rows
+    }
+  } catch (error) {
+    return createDbErrorResponse(error)
+  }
+}
+
+function getSessionsByTimeRange(startTime: number, endTime: number): DbResponse<SessionInfo[]> {
+  if (!isDbReady()) {
+    return createDbErrorResponse(dbError || '数据库未初始化')
+  }
+  
+  try {
+    const rows = db!.prepare(`
+      SELECT id, start_time as startTime, end_time as endTime, duration, point_count as pointCount, poll_interval as pollInterval, name, note
+      FROM sessions
+      WHERE start_time >= ? AND start_time <= ?
+      ORDER BY created_at DESC
+    `).all(startTime, endTime) as SessionInfo[]
+    
+    return {
+      success: true,
+      data: rows
+    }
+  } catch (error) {
+    return createDbErrorResponse(error)
+  }
+}
+
+function updateSessionName(id: string, name: string): DbResponse<boolean> {
+  if (!isDbReady()) {
+    return createDbErrorResponse(dbError || '数据库未初始化')
+  }
+  
+  try {
+    db!.prepare(`
+      UPDATE sessions SET name = ? WHERE id = ?
+    `).run(name, id)
+    
+    return {
+      success: true,
+      data: true
+    }
+  } catch (error) {
+    return createDbErrorResponse(error)
+  }
+}
+
+function updateSessionNote(id: string, note: string): DbResponse<boolean> {
+  if (!isDbReady()) {
+    return createDbErrorResponse(dbError || '数据库未初始化')
+  }
+  
+  try {
+    db!.prepare(`
+      UPDATE sessions SET note = ? WHERE id = ?
+    `).run(note, id)
+    
+    return {
+      success: true,
+      data: true
+    }
+  } catch (error) {
+    return createDbErrorResponse(error)
+  }
+}
+
 function getSession(id: string): DbResponse<Session | null> {
   if (!isDbReady()) {
     return createDbErrorResponse(dbError || '数据库未初始化')
@@ -300,7 +404,7 @@ function getSession(id: string): DbResponse<Session | null> {
   
   try {
     const sessionRow = db!.prepare(`
-      SELECT id, start_time as startTime, end_time as endTime, duration, point_count as pointCount
+      SELECT id, start_time as startTime, end_time as endTime, duration, point_count as pointCount, poll_interval as pollInterval, name, note
       FROM sessions
       WHERE id = ?
     `).get(id) as SessionInfo | undefined
@@ -563,5 +667,63 @@ ipcMain.handle('db:deleteSession', (_event, id: string) => {
   } catch (error) {
     console.error('[IPC] db:deleteSession error:', error)
     return createDbErrorResponse(error)
+  }
+})
+
+ipcMain.handle('db:searchSessions', (_event, searchTerm: string) => {
+  try {
+    return searchSessions(searchTerm)
+  } catch (error) {
+    console.error('[IPC] db:searchSessions error:', error)
+    return createDbErrorResponse(error)
+  }
+})
+
+ipcMain.handle('db:getSessionsByTimeRange', (_event, startTime: number, endTime: number) => {
+  try {
+    return getSessionsByTimeRange(startTime, endTime)
+  } catch (error) {
+    console.error('[IPC] db:getSessionsByTimeRange error:', error)
+    return createDbErrorResponse(error)
+  }
+})
+
+ipcMain.handle('db:updateSessionName', (_event, id: string, name: string) => {
+  try {
+    return updateSessionName(id, name)
+  } catch (error) {
+    console.error('[IPC] db:updateSessionName error:', error)
+    return createDbErrorResponse(error)
+  }
+})
+
+ipcMain.handle('db:updateSessionNote', (_event, id: string, note: string) => {
+  try {
+    return updateSessionNote(id, note)
+  } catch (error) {
+    console.error('[IPC] db:updateSessionNote error:', error)
+    return createDbErrorResponse(error)
+  }
+})
+
+ipcMain.handle('recording:setPollInterval', (_event, interval: number) => {
+  try {
+    if (POLL_INTERVAL_OPTIONS.includes(interval)) {
+      currentPollInterval = interval
+      return { success: true, interval: currentPollInterval }
+    }
+    return { success: false, error: 'Invalid poll interval' }
+  } catch (error) {
+    console.error('[IPC] recording:setPollInterval error:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('recording:getPollInterval', () => {
+  try {
+    return { success: true, interval: currentPollInterval, options: POLL_INTERVAL_OPTIONS }
+  } catch (error) {
+    console.error('[IPC] recording:getPollInterval error:', error)
+    return { success: false, error: String(error) }
   }
 })

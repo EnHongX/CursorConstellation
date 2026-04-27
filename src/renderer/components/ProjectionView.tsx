@@ -1,4 +1,4 @@
-import React, { forwardRef, useCallback, useEffect, useRef } from 'react'
+import React, { forwardRef, useCallback, useEffect, useRef, useState } from 'react'
 import { ColorMode, KeyPoint, Point } from '../types'
 import {
   calculateSpeedStats,
@@ -38,6 +38,7 @@ export const ProjectionView = forwardRef<HTMLCanvasElement, ProjectionViewProps>
   ref
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const [devicePixelRatio, setDevicePixelRatio] = useState<number>(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1)
 
   const setCanvasRef = useCallback((canvas: HTMLCanvasElement | null) => {
     canvasRef.current = canvas
@@ -52,6 +53,22 @@ export const ProjectionView = forwardRef<HTMLCanvasElement, ProjectionViewProps>
     }
   }, [ref, points.length])
 
+  useEffect(() => {
+    const updatePixelRatio = () => {
+      setDevicePixelRatio(window.devicePixelRatio || 1)
+    }
+
+    const mediaQueryList = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+    mediaQueryList.addEventListener('change', updatePixelRatio)
+
+    return () => {
+      mediaQueryList.removeEventListener('change', updatePixelRatio)
+    }
+  }, [])
+
+  const physicalWidth = PROJECTION_VIEW_WIDTH * devicePixelRatio
+  const physicalHeight = PROJECTION_VIEW_HEIGHT * devicePixelRatio
+
   const drawProjectionViews = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas || points.length === 0) {
@@ -63,11 +80,15 @@ export const ProjectionView = forwardRef<HTMLCanvasElement, ProjectionViewProps>
       return
     }
 
+    context.save()
+    context.scale(devicePixelRatio, devicePixelRatio)
+
     context.fillStyle = '#16213e'
     context.fillRect(0, 0, PROJECTION_VIEW_WIDTH, PROJECTION_VIEW_HEIGHT)
 
     const displayPoints = limitDisplayPoints(points, POINT_DISPLAY_LIMIT)
     if (displayPoints.length === 0) {
+      context.restore()
       return
     }
 
@@ -412,8 +433,10 @@ export const ProjectionView = forwardRef<HTMLCanvasElement, ProjectionViewProps>
 
     context.fillStyle = 'rgba(255, 255, 255, 0.44)'
     context.font = '10px -apple-system, BlinkMacSystemFont, sans-serif'
-    context.fillText('说明：这里的“厚度”只表示时间，不表示密度或停留时长。', xytPanel.x + 18, xytPanel.y + xytPanel.height - 10)
-  }, [colorMode, points, selectedKeyPoint, showKeyPoints])
+    context.fillText('说明：这里的"厚度"只表示时间，不表示密度或停留时长。', xytPanel.x + 18, xytPanel.y + xytPanel.height - 10)
+
+    context.restore()
+  }, [colorMode, points, selectedKeyPoint, showKeyPoints, devicePixelRatio])
 
   useEffect(() => {
     drawProjectionViews()
@@ -435,8 +458,8 @@ export const ProjectionView = forwardRef<HTMLCanvasElement, ProjectionViewProps>
       </div>
       <canvas
         ref={setCanvasRef}
-        width={PROJECTION_VIEW_WIDTH}
-        height={PROJECTION_VIEW_HEIGHT}
+        width={physicalWidth}
+        height={physicalHeight}
         className="projection-view-canvas"
       />
     </div>

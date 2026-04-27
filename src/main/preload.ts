@@ -98,6 +98,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteSession: (id: string): Promise<DbResponse<boolean>> => {
     return ipcRenderer.invoke('db:deleteSession', id)
   },
+
+  searchSessions: (searchTerm: string): Promise<DbResponse<SessionInfo[]>> => {
+    return ipcRenderer.invoke('db:searchSessions', searchTerm)
+  },
+
+  getSessionsByTimeRange: (startTime: number, endTime: number): Promise<DbResponse<SessionInfo[]>> => {
+    return ipcRenderer.invoke('db:getSessionsByTimeRange', startTime, endTime)
+  },
+
+  updateSessionName: (id: string, name: string): Promise<DbResponse<boolean>> => {
+    return ipcRenderer.invoke('db:updateSessionName', id, name)
+  },
+
+  updateSessionNote: (id: string, note: string): Promise<DbResponse<boolean>> => {
+    return ipcRenderer.invoke('db:updateSessionNote', id, note)
+  },
+
+  setPollInterval: (interval: number): Promise<{ success: boolean; interval?: number; error?: string }> => {
+    return ipcRenderer.invoke('recording:setPollInterval', interval)
+  },
+
+  getPollInterval: (): Promise<{ success: boolean; interval?: number; options?: number[]; error?: string }> => {
+    return ipcRenderer.invoke('recording:getPollInterval')
+  },
 })
 
 declare global {
@@ -119,6 +143,12 @@ declare global {
       getSessions: () => Promise<DbResponse<SessionInfo[]>>
       getSession: (id: string) => Promise<DbResponse<Session | null>>
       deleteSession: (id: string) => Promise<DbResponse<boolean>>
+      searchSessions: (searchTerm: string) => Promise<DbResponse<SessionInfo[]>>
+      getSessionsByTimeRange: (startTime: number, endTime: number) => Promise<DbResponse<SessionInfo[]>>
+      updateSessionName: (id: string, name: string) => Promise<DbResponse<boolean>>
+      updateSessionNote: (id: string, note: string) => Promise<DbResponse<boolean>>
+      setPollInterval: (interval: number) => Promise<{ success: boolean; interval?: number; error?: string }>
+      getPollInterval: () => Promise<{ success: boolean; interval?: number; options?: number[]; error?: string }>
     }
   }
 }
